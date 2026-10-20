@@ -236,7 +236,13 @@ screenshot of the open menu.
 
 ## Phase 4: robustness
 
-- **Shortcut modifiers still held.** Verify `--clearmodifiers` is enough with
+- **Menu popup while shortcut keys are held (fixed).** Cinnamon runs the
+  command while `Super+V` is still down, and its key grab makes GTK's menu
+  grab fail (`no trigger event for menu popup`): no menu, and a leaked helper
+  window. `menu.rs` now retries `popup_at_widget` every 25 ms (up to 2 s)
+  until the grab succeeds, and ends the interaction only after the menu was
+  actually mapped.
+- **Shortcut modifiers still held (paste side).** Verify `--clearmodifiers` is enough with
   a `Ctrl+Alt+V`-style shortcut. If it is not, add a small delay or poll
   `xdotool` / XQueryKeymap until the keys are released.
 - **Timing.** Tune the pre-activation and pre-key delays by testing in a slow

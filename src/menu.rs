@@ -174,19 +174,48 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
     menu.append(&clear);
     menu.show_all();
 
-    let helper_clone = helper.clone();
-    menu.connect_hide(move |_| {
-        // Defer so a pending "activate" is delivered first.
-        let h = helper_clone.clone();
+    // Set once the menu is really on screen. Until then a hide is just a failed
+    // popup attempt and must not end the interaction.
+    let shown = Rc::new(std::cell::Cell::new(false));
+    {
+        let shown = shown.clone();
+        menu.connect_map(move |_| shown.set(true));
+    }
+    {
+        let helper = helper.clone();
+        let shown = shown.clone();
         let pasting = pasting.clone();
         let on_finish = on_finish.clone();
-        glib::idle_add_local_once(move || {
-            h.close();
-            if !pasting.get() {
-                on_finish();
+        menu.connect_hide(move |_| {
+            if !shown.get() {
+                return;
             }
+            // Defer so a pending "activate" is delivered first.
+            let (h, pasting, on_finish) = (helper.clone(), pasting.clone(), on_finish.clone());
+            glib::idle_add_local_once(move || {
+                h.close();
+                if !pasting.get() {
+                    on_finish();
+                }
+            });
         });
-    });
+    }
+
+    popup_when_grabbable(menu, helper, shown, on_finish, 0);
+}
+
+/// The global shortcut runs us while its keys are still held, and the window
+/// manager's key grab makes GTK's menu grab fail. Retry until the keys are
+/// released; give up (and clean up) after a couple of seconds.
+fn popup_when_grabbable(
+    menu: gtk::Menu,
+    helper: gtk::Window,
+    shown: Rc<std::cell::Cell<bool>>,
+    on_finish: Rc<dyn Fn()>,
+    attempt: u32,
+) {
+    const RETRY: std::time::Duration = std::time::Duration::from_millis(25);
+    const MAX_ATTEMPTS: u32 = 80;
 
     menu.popup_at_widget(
         &helper,
@@ -194,6 +223,19 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
         gtk::gdk::Gravity::NorthWest,
         None,
     );
+    glib::timeout_add_local_once(RETRY, move || {
+        if shown.get() && menu.is_visible() {
+            return;
+        }
+        menu.popdown();
+        if attempt + 1 >= MAX_ATTEMPTS {
+            eprintln!("diodon-next: could not grab the keyboard for the menu");
+            helper.close();
+            on_finish();
+            return;
+        }
+        popup_when_grabbable(menu, helper, shown, on_finish, attempt + 1);
+    });
 }
 
 #[cfg(test)]
