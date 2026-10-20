@@ -1,6 +1,18 @@
+mod db;
+mod menu;
+mod paste;
+mod watcher;
+
 use gtk::gio::{self, prelude::*};
 use gtk::glib;
-use gtk::prelude::*;
+use std::cell::{OnceCell, RefCell};
+use std::rc::Rc;
+
+pub struct State {
+    pub db: db::Db,
+    /// Text we put on the clipboard ourselves, so the watcher can ignore it.
+    pub last_set: RefCell<Option<String>>,
+}
 
 const APP_ID: &str = "dev.quentin.DiodonNext";
 
@@ -11,15 +23,32 @@ fn main() -> glib::ExitCode {
     );
 
     // Keep the process alive without any window.
-    let guard = std::cell::RefCell::new(None);
-    app.connect_startup(move |app| {
-        *guard.borrow_mut() = Some(app.hold());
-    });
+    let state: Rc<OnceCell<Rc<State>>> = Rc::new(OnceCell::new());
+    let guard = RefCell::new(None);
+    {
+        let state = state.clone();
+        app.connect_startup(move |app| {
+            *guard.borrow_mut() = Some(app.hold());
+            let db = match db::Db::open() {
+                Ok(db) => db,
+                Err(e) => {
+                    eprintln!("diodon-next: cannot open database: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let st = Rc::new(State {
+                db,
+                last_set: RefCell::new(None),
+            });
+            watcher::start(st.clone());
+            let _ = state.set(st);
+        });
+    }
 
     app.connect_activate(|_| {});
 
     // Runs in the primary instance for every invocation, local or remote.
-    app.connect_command_line(|app, cmd| {
+    app.connect_command_line(move |app, cmd| {
         let args: Vec<String> = cmd
             .arguments()
             .iter()
@@ -28,7 +57,11 @@ fn main() -> glib::ExitCode {
             .collect();
         match args.first().map(String::as_str) {
             Some("daemon") => {}
-            Some("show") => show_menu(app),
+            Some("show") => {
+                if let Some(st) = state.get() {
+                    menu::show(st.clone());
+                }
+            }
             Some("quit") => app.quit(),
             _ => {
                 eprintln!("usage: diodon-next <daemon|show|quit>");
@@ -39,46 +72,4 @@ fn main() -> glib::ExitCode {
     });
 
     app.run()
-}
-
-fn show_menu(_app: &gtk::Application) {
-    let Some(display) = gtk::gdk::Display::default() else {
-        return;
-    };
-    let Some(pointer) = display.default_seat().and_then(|s| s.pointer()) else {
-        return;
-    };
-    let (_, x, y) = pointer.position();
-
-    // Tiny undecorated helper window at the pointer, used as the menu anchor.
-    let helper = gtk::Window::new(gtk::WindowType::Toplevel);
-    helper.set_decorated(false);
-    helper.set_skip_taskbar_hint(true);
-    helper.set_skip_pager_hint(true);
-    helper.set_default_size(1, 1);
-    helper.set_type_hint(gtk::gdk::WindowTypeHint::PopupMenu);
-    helper.move_(x, y);
-    helper.show_all();
-
-    let menu = gtk::Menu::new();
-    for i in 1..=5 {
-        let item = gtk::MenuItem::with_mnemonic(&format!("_{i} dummy entry {i}"));
-        item.connect_activate(move |_| println!("selected {i}"));
-        menu.append(&item);
-    }
-    menu.show_all();
-
-    let helper_clone = helper.clone();
-    menu.connect_hide(move |_| {
-        // Defer so a pending "activate" is delivered first.
-        let h = helper_clone.clone();
-        glib::idle_add_local_once(move || h.close());
-    });
-
-    menu.popup_at_widget(
-        &helper,
-        gtk::gdk::Gravity::NorthWest,
-        gtk::gdk::Gravity::NorthWest,
-        None,
-    );
 }
