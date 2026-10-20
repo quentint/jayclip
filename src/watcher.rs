@@ -20,7 +20,7 @@ pub fn start(state: Rc<State>) {
         }
         cb.request_text(move |_, text| {
             if let Some(text) = text {
-                record(&state, &text);
+                record(&state, text);
             }
         });
         None

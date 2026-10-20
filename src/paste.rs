@@ -26,8 +26,26 @@ fn xdotool(args: &[&str]) -> Option<String> {
 /// Capture the focused window. Must run before any of our UI appears.
 pub fn active_target() -> Option<Target> {
     let window = xdotool(&["getactivewindow"])?;
-    let class = xdotool(&["getwindowclassname", &window]).unwrap_or_default();
-    Some(Target { window, class })
+    Some(Target {
+        class: window_class(&window),
+        window,
+    })
+}
+
+/// WM_CLASS via xprop; this xdotool version has no `getwindowclassname`.
+fn window_class(window: &str) -> String {
+    let Ok(out) = Command::new("xprop").args(["-id", window, "WM_CLASS"]).output() else {
+        return String::new();
+    };
+    // WM_CLASS(STRING) = "instance", "Class"
+    String::from_utf8_lossy(&out.stdout)
+        .split('=')
+        .nth(1)
+        .unwrap_or("")
+        .replace('"', "")
+        .replace(',', " ")
+        .trim()
+        .to_string()
 }
 
 pub fn paste_combo(class: &str) -> &'static str {
