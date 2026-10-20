@@ -376,7 +376,15 @@ Needs a small dedicated UI, not just a config file.
 5. **Pause recording.** A toggle that stops the watcher from storing entries
    (clipboard stays usable); shown in the tray icon state.
 
-## Phase 8: README and clean-install documentation
+## Phase 8: README and clean-install documentation (done: `README.md`)
+
+Status: written and checked. Verified from scratch in an `ubuntu:24.04`
+container: the apt package list plus `rustup` builds and installs the binary
+with no missing libraries. Found there: Ubuntu 24.04's apt `rustc` is 1.75, too
+old for the 2024 edition, so `rustup` is required. The `gsettings` shortcut
+snippet was run verbatim against a scratch keyfile backend (empty list and
+existing list), and the list-reload trick on the real settings. Not tested: a
+full Mint VM from the ISO, and the GUI shortcut steps.
 
 A `README.md` that takes a clean Linux Mint (Cinnamon, X11) install to a
 working setup. Every command in it must be tested in a clean environment (a
