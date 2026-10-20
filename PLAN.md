@@ -234,30 +234,58 @@ and the limit applying to unpinned entries only. The submenu itself is
 checked manually: pin, unpin, and verify order in the database and the
 screenshot of the open menu.
 
-## Phase 4: robustness
+## Phase 4: robustness (current)
 
-- **Menu popup while shortcut keys are held (fixed).** Cinnamon runs the
-  command while `Super+V` is still down, and its key grab makes GTK's menu
-  grab fail (`no trigger event for menu popup`): no menu, and a leaked helper
-  window. `menu.rs` now retries `popup_at_widget` every 25 ms (up to 2 s)
-  until the grab succeeds, and ends the interaction only after the menu was
-  actually mapped.
-- **Shortcut modifiers still held (paste side).** Verify `--clearmodifiers` is enough with
-  a `Ctrl+Alt+V`-style shortcut. If it is not, add a small delay or poll
-  `xdotool` / XQueryKeymap until the keys are released.
-- **Timing.** Tune the pre-activation and pre-key delays by testing in a slow
-  app (Electron, Firefox). Make them constants.
-- **Clipboard persistence.** Test: copy in app A, close A, open the menu. The
-  entry must still be there (it is in SQLite) and pasting it must work (we
-  re-own the clipboard in `paste`).
-- **Self-change loop.** Confirm that pasting does not create duplicate rows.
-- **Database safety.** Confirm file modes (0700 directory, 0600 file) and that
-  a crash does not corrupt the WAL database.
-- **Sensitive data.** Skip hinted entries. Consider adding a "don't record
-  when the source window class is X" list, for example a password manager.
-- **Large or odd text.** Test with multi-megabyte text, binary-ish text and
-  text with `<`, `&` and `_` in the label.
-- **Daemon lifetime.** Handle SIGTERM and let the application quit cleanly.
+Status legend: [x] done, [ ] to do.
+
+- [x] **Menu popup while shortcut keys are held.** Cinnamon runs the command
+  while `Super+V` is still down, and its key grab makes GTK's menu grab fail
+  (`no trigger event for menu popup`): no menu, and a leaked helper window.
+  `menu.rs` retries `popup_at_widget` every 25 ms (up to 2 s) until the grab
+  succeeds, and ends the interaction only after the menu was actually mapped.
+- [ ] **Quiet logs.** The retry loop makes GTK print one warning per attempt.
+  Install a GLib log handler that drops exactly that message (and keeps all
+  others), so a normal run prints nothing.
+- [ ] **Clean shutdown.** Handle SIGTERM and SIGINT (`glib::unix_signal_add`)
+  by quitting the application, so the SQLite WAL is checkpointed and the
+  process exits 0. Verify with `kill -TERM` and `kill -INT`, and that the
+  database reopens with all rows.
+- [ ] **Oversized text.** Verify: text just under `MAX_BYTES` (100 000) is
+  stored, just over is ignored, a multi-megabyte copy does not freeze the
+  daemon or grow memory noticeably, and a normal copy still works afterwards.
+  Also binary-ish text and labels containing `<`, `&` and `_`.
+- [ ] **Real-app paste matrix.** Check paste with the real shortcut in:
+  Firefox (text field and URL bar), RustRover, an Electron app, gnome-terminal
+  (done), and a plain GTK entry (done). Tune `SETTLE` in `paste.rs` if any of
+  them pastes late, the wrong thing, or nothing. Record results in the
+  table at the end of this section.
+- [ ] **Shortcut modifiers still held (paste side).** Confirm
+  `--clearmodifiers` is enough with the real `Super+V` (should not turn the
+  paste into `Super+Ctrl+V`). If not, poll until the keys are released.
+- [ ] **Clipboard persistence.** Copy in app A, close A, open the menu: the
+  entry is still there (SQLite) and pastes (we re-own the clipboard).
+- [ ] **Self-change loop.** Pasting does not create duplicate rows.
+- [ ] **Password-manager copies.** The daemon skips copies that carry the
+  `x-kde-passwordManagerHint` target. Confirmed working by the user with
+  their password manager. This becomes a user setting in Phase 7 (default:
+  skip).
+- [ ] **Fresh login.** After a real logout and login: the daemon is running,
+  `Super+V` works without rewriting `custom-list`, and the original Diodon is
+  not running.
+- [x] **Database safety.** Directory 0700, file 0600, WAL mode.
+
+Not planned: a "don't record copies from app X" ignore list (the clipboard
+does not tell us the source window reliably), and a search/filter UI.
+
+Results table (fill in while testing):
+
+| App | Paste | Notes |
+|---|---|---|
+| GTK entry | ok | |
+| gnome-terminal | ok | Ctrl+Shift+V |
+| Firefox | | |
+| RustRover | | |
+| Electron app | | |
 
 ## Phase 5: integration
 
@@ -287,13 +315,88 @@ screenshot of the open menu.
    remove its autostart) so there are not two clipboard managers fighting
    for ownership.
 
-## Phase 6: later (not in v1)
+## Phase 6: images
 
-- Search or filter. `Gtk.Menu` has none, so this would need a small popup
-  window with an entry and a list.
-- Images and file lists (`text/uri-list`): blob table, multi-target
-  clipboard ownership, thumbnails in the menu.
-- Configuration file (history size, terminal list, ignored apps).
+Text-only today; the original Diodon had images on. Needed:
+
+1. **Schema (migration to `user_version = 2`).** Add `kind TEXT NOT NULL
+   DEFAULT 'text'` and `data BLOB` to `entries`. For images, `content` holds a
+   stable key (hex hash of the PNG bytes) so the existing `UNIQUE(content)`
+   dedupe keeps working, and `data` holds the PNG.
+2. **Capture.** In the watcher, when no text is offered but an image target
+   is (`image/png` via `Clipboard::request_image` / `wait_for_image`), encode
+   to PNG with `gdk_pixbuf` (already part of GTK, no new crate), hash it, and
+   upsert. Cap the stored size (setting, default a few MB) and ignore larger
+   images.
+3. **Menu.** Show a small thumbnail (scaled pixbuf, about 48 px high) with a
+   label like `Image 1920x1080`, using a `gtk::ImageMenuItem`-style layout
+   (box with image and label). Keypad and mnemonic shortcuts apply as for text.
+4. **Paste.** `paste.rs` sets the clipboard with `set_image` (the pixbuf
+   decoded from the blob) before sending the paste keystroke.
+5. **Pruning and size.** Images count toward the same entry cap; add a total
+   size cap for image blobs so the database cannot grow without bound.
+6. **Tests.** Round trip: PNG in, same hash out, dedupe, prune; manual paste
+   into an image-capable app (browser, image editor, chat).
+
+## Phase 7: settings UI and status icon
+
+Needs a small dedicated UI, not just a config file.
+
+1. **Settings storage.** A `settings` table in the existing SQLite database
+   (key/value), read at startup and on change. No extra file format and no
+   new crate. Defaults apply when a key is missing.
+2. **Settings (initial list).**
+   - Skip password-manager copies (default: on).
+   - History size (default: 50; replaces the constant `MAX_ENTRIES`).
+   - Maximum text size (default 100 000 bytes).
+   - Record images, and the maximum image size (Phase 6).
+3. **Settings window.** A `gtk::Window` with checkboxes and spin buttons,
+   opened from the status icon menu and by `diodon-next settings`. Changes
+   apply immediately in the running daemon.
+4. **Status icon.** A tray icon for the daemon, with a menu: Show history,
+   Settings, Pause recording, Quit. Cinnamon supports the StatusNotifier /
+   XApp protocol, so the plan is to use the XApp status icon through
+   `libxapp` (already installed on Linux Mint) via its GObject introspection
+   bindings or a small FFI shim. The `gtk::StatusIcon` API is deprecated, so
+   it is the fallback only. Decide when starting this phase after checking what
+   the Rust side can call without a new dependency.
+5. **Pause recording.** A toggle that stops the watcher from storing entries
+   (clipboard stays usable); shown in the tray icon state.
+
+## Phase 8: README and clean-install documentation
+
+A `README.md` that takes a clean Linux Mint (Cinnamon, X11) install to a
+working setup. Every command in it must be tested in a clean environment (a
+fresh VM or container is ideal; at minimum on a throwaway user account).
+
+Contents:
+
+1. What it is, what it is not (personal tool, X11 only, no Wayland).
+2. **System packages** (apt): `build-essential`, `pkg-config`, `libgtk-3-dev`,
+   `xdotool`, `x11-utils` (for `xwininfo`) and `x11-xserver-utils` if used,
+   and `curl` for rustup. List only what the build and runtime really need,
+   found by testing on a clean install.
+3. **Rust toolchain** via `rustup`, and how to load `~/.cargo/env`.
+4. **Build and install**: `cargo install --path . --locked`; where the binary
+   goes (`~/.cargo/bin`); how to confirm it is on `PATH`.
+5. **Autostart**: the `.desktop` file, and a one-line command that writes it.
+6. **Global shortcut** on Cinnamon: GUI steps (Settings, Keyboard, Shortcuts,
+   Custom) and the equivalent `gsettings` commands, including the
+   `custom-list` rewrite needed so Cinnamon notices the change.
+7. **Replacing Diodon / CopyQ**: how to stop and disable them.
+8. **Usage**: menu keys (arrows, Enter, digits with Shift on AZERTY, keypad
+   digits, `P` for pin, `C` for clear), pinning, where the data lives and its
+   permissions.
+9. **Uninstall**: remove the binary, autostart file, shortcut and data.
+10. **Troubleshooting**: shortcut does nothing, menu does not appear, paste
+    goes to the wrong window, terminals needing Ctrl+Shift+V.
+
+A small `install.sh` that performs steps 2 to 6 is optional; the README must
+stand on its own without it.
+
+## Later / maybe
+
+- File lists (`text/uri-list`).
 - Optional encryption at rest.
 
 ## Testing strategy
