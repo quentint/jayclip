@@ -12,6 +12,8 @@ pub struct State {
     pub db: db::Db,
     /// Text we put on the clipboard ourselves, so the watcher can ignore it.
     pub last_set: RefCell<Option<String>>,
+    /// Text of the last copy skipped for carrying the password-manager hint.
+    pub last_secret: RefCell<Option<String>>,
     /// True from `show` until its interaction ends; blocks overlapping menus.
     pub menu_active: std::cell::Cell<bool>,
 }
@@ -61,6 +63,7 @@ fn main() -> glib::ExitCode {
             let st = Rc::new(State {
                 db,
                 last_set: RefCell::new(None),
+                last_secret: RefCell::new(None),
                 menu_active: std::cell::Cell::new(false),
             });
             watcher::start(st.clone());

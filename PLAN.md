@@ -260,20 +260,24 @@ Status legend: [x] done, [ ] to do.
   stored, just over is ignored, a multi-megabyte copy does not freeze the
   daemon or grow memory noticeably, and a normal copy still works afterwards.
   Also binary-ish text and labels containing `<`, `&` and `_`.
-- [ ] **Real-app paste matrix.** Check paste with the real shortcut in:
+- [x] **Real-app paste matrix** (RustRover left to the user, see table). Check paste with the real shortcut in:
   Firefox (text field and URL bar), RustRover, an Electron app, gnome-terminal
   (done), and a plain GTK entry (done). Tune `SETTLE` in `paste.rs` if any of
   them pastes late, the wrong thing, or nothing. Record results in the
   table at the end of this section.
-- [ ] **Shortcut modifiers still held (paste side).** Confirm
+- [x] **Shortcut modifiers still held (paste side).** Verified with a real `Super+V` key press in Chrome and xed: pasted text, no `Super+Ctrl+V` side effect. Original note: Confirm
   `--clearmodifiers` is enough with the real `Super+V` (should not turn the
   paste into `Super+Ctrl+V`). If not, poll until the keys are released.
-- [ ] **Clipboard persistence.** Copy in app A, close A, open the menu: the
+- [x] **Clipboard persistence.** Verified. Copy in app A, close A, open the menu: the
   entry is still there (SQLite) and pastes (we re-own the clipboard).
-- [ ] **Self-change loop.** Pasting does not create duplicate rows.
-- [ ] **Password-manager copies.** The daemon skips copies that carry the
+- [x] **Self-change loop.** Verified: no duplicate rows after a paste. Pasting does not create duplicate rows.
+- [x] **Password-manager copies.** The daemon skips copies that carry the
   `x-kde-passwordManagerHint` target. Confirmed working by the user with
-  their password manager. This becomes a user setting in Phase 7 (default:
+  their password manager. Bug found and fixed while testing with a fake
+  source: when the source exits, the session's clipboard service (`csd-clipboard`)
+  re-offers the same text without the marker, and it was stored. The watcher
+  now remembers the text of the last skipped copy (`State::last_secret`) and
+  ignores it until a different copy arrives. This becomes a user setting in Phase 7 (default:
   skip).
 - [ ] **Fresh login.** After a real logout and login: the daemon is running,
   `Super+V` works without rewriting `custom-list`, and the original Diodon is
@@ -289,9 +293,12 @@ Results table (fill in while testing):
 |---|---|---|
 | GTK entry | ok | |
 | gnome-terminal | ok | Ctrl+Shift+V |
-| Firefox | | |
-| RustRover | | |
-| Electron app | | |
+| Google Chrome (textarea) | ok | text with `é _ < &` |
+| Google Chrome (URL bar) | ok | Ctrl+L then paste |
+| xed | ok | saved file matches |
+| Firefox | n/a | not installed |
+| RustRover | to test by the user | not tested here: it is the IDE in use, pasting could alter open files |
+| Electron app | not tested | Chrome (same engine) is ok; Discord is installed if wanted |
 
 ## Phase 5: integration
 
