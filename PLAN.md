@@ -32,9 +32,16 @@ One binary, two subcommands.
 
 - `diodon-next daemon`: started at login. Owns the clipboard watcher, the
   database and the menu.
-- `diodon-next show`: bound to the global shortcut. Activates the running
-  daemon's `show` action and exits. If no daemon is running, it starts one
-  and shows the menu.
+- `diodon-next show`: bound to the global shortcut. Forwards to the running
+  daemon (over D-Bus) and returns immediately. If no daemon is running, this
+  process becomes the primary instance, shows the menu, and **exits once the
+  interaction is over** (menu dismissed, or paste sent plus a 500 ms grace
+  period so the target can fetch the text). It does not linger as a hidden
+  daemon, and it records nothing after it exits.
+- `diodon-next quit`: stops the running daemon.
+
+This mirrors the original Diodon, which runs as an autostarted daemon and
+whose shortcut just runs `diodon` to activate it.
 
 Both use the same `gtk::Application` ID (e.g. `dev.quentin.DiodonNext`), so
 GTK routes the second invocation to the first process.
@@ -257,8 +264,12 @@ screenshot of the open menu.
    Type=Application
    Name=diodon-next
    Exec=/home/quentin/.cargo/bin/diodon-next daemon
+   Terminal=false
    X-GNOME-Autostart-enabled=true
    ```
+   The file is installed at `~/.config/autostart/diodon-next.desktop`. It takes
+   effect at the next login; to start it earlier run
+   `diodon-next daemon` in the background after stopping Diodon and CopyQ.
 3. **Cinnamon keybinding.** Either use Settings → Keyboard → Shortcuts →
    Custom Shortcuts, or script it with `gsettings` on
    `org.cinnamon.desktop.keybindings` (`custom-list` plus a

@@ -57,10 +57,10 @@ pub fn paste_combo(class: &str) -> &'static str {
     }
 }
 
-/// Refocus the target and send the paste keystroke, off the GTK thread so the
-/// main loop can keep serving clipboard requests.
-pub fn send_paste(target: Option<Target>) {
-    std::thread::spawn(move || {
+/// Refocus the target and send the paste keystroke. The blocking xdotool calls
+/// run on a worker thread so the GTK main loop keeps serving clipboard requests.
+pub async fn send_paste(target: Option<Target>) {
+    let _ = gtk::gio::spawn_blocking(move || {
         std::thread::sleep(SETTLE);
         let combo = match &target {
             Some(t) => {
@@ -74,7 +74,8 @@ pub fn send_paste(target: Option<Target>) {
         if xdotool(&["key", "--clearmodifiers", combo]).is_none() {
             eprintln!("diodon-next: xdotool key failed; content is on the clipboard");
         }
-    });
+    })
+    .await;
 }
 
 #[cfg(test)]

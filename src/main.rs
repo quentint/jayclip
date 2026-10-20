@@ -59,7 +59,16 @@ fn main() -> glib::ExitCode {
             Some("daemon") => {}
             Some("show") => {
                 if let Some(st) = state.get() {
-                    menu::show(st.clone());
+                    // Not remote means no daemon was running and this process
+                    // became the primary instance. Do not linger as a hidden
+                    // daemon: exit once the menu interaction is over.
+                    let on_finish: Rc<dyn Fn()> = if cmd.is_remote() {
+                        Rc::new(|| {})
+                    } else {
+                        let app = app.clone();
+                        Rc::new(move || app.quit())
+                    };
+                    menu::show(st.clone(), on_finish);
                 }
             }
             Some("quit") => app.quit(),

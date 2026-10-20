@@ -63,7 +63,13 @@ fn pin_submenu(state: &Rc<State>, entries: &[Entry]) -> gtk::MenuItem {
     parent
 }
 
-pub fn show(state: Rc<State>) {
+/// Time the clipboard stays owned after the paste keystroke, so the target
+/// app can fetch the text before a one-shot process exits.
+const GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Show the history menu. `on_finish` runs once the interaction is over: the
+/// menu was dismissed, or the chosen entry has been pasted.
+pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
     // Capture the focused window before our own UI steals focus.
     let target = paste::active_target();
 
@@ -90,6 +96,8 @@ pub fn show(state: Rc<State>) {
 
     // The target is consumed by whichever item is activated.
     let target = Rc::new(std::cell::RefCell::new(target));
+    // Set when an item starts a paste, which then owns calling `on_finish`.
+    let pasting = Rc::new(std::cell::Cell::new(false));
 
     if entries.is_empty() {
         let item = gtk::MenuItem::with_label("(empty)");
@@ -114,6 +122,8 @@ pub fn show(state: Rc<State>) {
         let content = entry.content.clone();
         let state = state.clone();
         let target = target.clone();
+        let pasting = pasting.clone();
+        let on_finish = on_finish.clone();
         item.connect_activate(move |_| {
             *state.last_set.borrow_mut() = Some(content.clone());
             if let Err(e) = state.db.upsert(&content) {
@@ -121,7 +131,14 @@ pub fn show(state: Rc<State>) {
             }
             let cb = watcher::clipboard();
             cb.set_text(&content);
-            paste::send_paste(target.borrow_mut().take());
+            pasting.set(true);
+            let target = target.borrow_mut().take();
+            let on_finish = on_finish.clone();
+            glib::spawn_future_local(async move {
+                paste::send_paste(target).await;
+                glib::timeout_future(GRACE).await;
+                on_finish();
+            });
         });
         menu.append(&item);
         items.push(item);
@@ -161,7 +178,14 @@ pub fn show(state: Rc<State>) {
     menu.connect_hide(move |_| {
         // Defer so a pending "activate" is delivered first.
         let h = helper_clone.clone();
-        glib::idle_add_local_once(move || h.close());
+        let pasting = pasting.clone();
+        let on_finish = on_finish.clone();
+        glib::idle_add_local_once(move || {
+            h.close();
+            if !pasting.get() {
+                on_finish();
+            }
+        });
     });
 
     menu.popup_at_widget(
