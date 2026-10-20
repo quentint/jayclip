@@ -74,12 +74,15 @@ Operations in `db.rs`:
   migration keyed on `user_version`.
 - `upsert(content)`: `INSERT ... ON CONFLICT(content) DO UPDATE SET used_at = excluded.used_at`.
   This is the dedupe: re-copying an old entry moves it to the top.
-- `recent(limit)`: `SELECT id, content FROM entries ORDER BY pinned DESC, used_at DESC LIMIT ?`.
+- `recent(limit)`: returns every pinned entry plus the `limit` newest unpinned
+  ones, ordered `pinned DESC, used_at DESC, id DESC`. Each `Entry` carries
+  `id`, `content` and `pinned`. Pinned entries do not count against `limit`.
 - `prune(max)`: delete unpinned rows beyond the newest `max` by `used_at`.
   Run after every insert.
 - `clear()`: delete all unpinned rows.
-- `toggle_pin(id)`: reserved for a later phase, but the column exists now to
-  avoid a migration.
+- `toggle_pin(id)`: `UPDATE entries SET pinned = 1 - pinned WHERE id = ?`.
+  Re-copying a pinned entry keeps it pinned (the upsert only touches
+  `used_at`).
 
 Constants: `MAX_ENTRIES = 50`, `MAX_BYTES = 100_000` (larger text is ignored).
 
@@ -180,6 +183,45 @@ leave the content on the clipboard so the user can paste manually.
 Done when: the shortcut, a choice, and the text lands in a browser field, a
 text editor and a terminal, with the cursor position unchanged.
 
+## Phase 3b: pinning from a submenu
+
+Pinned entries stay at the top of the menu and are never pruned or cleared.
+The menu is native `gtk::Menu`, which cannot tell left from right clicks, so
+pinning lives in a submenu instead of a click modifier.
+
+Menu layout, top to bottom:
+
+```
+1 ★ pinned entry        <- pinned block (all pinned entries)
+2 ★ another pinned
+-------------------
+3 recent entry          <- newest unpinned, up to MAX_ENTRIES
+4 older entry
+-------------------
+Pin / unpin  >          <- submenu, mnemonic _P
+Clear history
+```
+
+Details:
+
+1. `menu.rs` labels pinned entries with a `★ ` prefix (`entry_label`). The
+   same helper is used in the submenu so marks stay consistent.
+2. A separator is inserted once, between the last pinned entry and the first
+   unpinned one. It is omitted if there are no pinned entries, or none
+   unpinned.
+3. `Pin / unpin` is shown only when the history is non-empty. Its submenu
+   lists every entry from the main menu, pinned ones marked with `★`.
+   Activating one calls `db.toggle_pin(id)` and does not paste or touch the
+   clipboard. The menu closes as usual; reopening shows the new order.
+4. Digit mnemonics (1-9) still apply to the main list in display order, so
+   pinned entries get the lowest numbers.
+5. `Clear history` keeps pinned entries (`clear()` only deletes unpinned).
+
+Tests: `db.rs` covers the reported `pinned` flag, pins surviving a re-copy,
+and the limit applying to unpinned entries only. The submenu itself is
+checked manually: pin, unpin, and verify order in the database and the
+screenshot of the open menu.
+
 ## Phase 4: robustness
 
 - **Shortcut modifiers still held.** Verify `--clearmodifiers` is enough with
@@ -225,7 +267,6 @@ text editor and a terminal, with the cursor position unchanged.
 
 ## Phase 6: later (not in v1)
 
-- Pin and unpin entries from the menu (the column already exists).
 - Search or filter. `Gtk.Menu` has none, so this would need a small popup
   window with an entry and a list.
 - Images and file lists (`text/uri-list`): blob table, multi-target

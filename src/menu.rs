@@ -1,5 +1,5 @@
 use crate::State;
-use crate::db::MAX_ENTRIES;
+use crate::db::{Entry, MAX_ENTRIES};
 use crate::{paste, watcher};
 use gtk::glib;
 use gtk::prelude::*;
@@ -21,6 +21,36 @@ pub fn label(content: &str) -> String {
         out.push('…');
     }
     out.replace('_', "__")
+}
+
+const PIN_MARK: &str = "★ ";
+
+fn entry_label(entry: &Entry) -> String {
+    let text = label(&entry.content);
+    if entry.pinned {
+        format!("{PIN_MARK}{text}")
+    } else {
+        text
+    }
+}
+
+/// "Pin / unpin" submenu: every entry is listed, pinned ones are marked;
+/// choosing one toggles its pin and does not paste anything.
+fn pin_submenu(state: &Rc<State>, entries: &[Entry]) -> gtk::MenuItem {
+    let parent = gtk::MenuItem::with_mnemonic("_Pin / unpin");
+    let sub = gtk::Menu::new();
+    for entry in entries {
+        let item = gtk::MenuItem::with_label(&entry_label(entry).replace("__", "_"));
+        let (state, id) = (state.clone(), entry.id);
+        item.connect_activate(move |_| {
+            if let Err(e) = state.db.toggle_pin(id) {
+                eprintln!("diodon-next: db error: {e}");
+            }
+        });
+        sub.append(&item);
+    }
+    parent.set_submenu(Some(&sub));
+    parent
 }
 
 pub fn show(state: Rc<State>) {
@@ -56,8 +86,14 @@ pub fn show(state: Rc<State>) {
         item.set_sensitive(false);
         menu.append(&item);
     }
+    let mut separated = false;
     for (i, entry) in entries.iter().enumerate() {
-        let text = label(&entry.content);
+        // Separate the pinned block from the rest.
+        if i > 0 && !entry.pinned && entries[i - 1].pinned && !separated {
+            menu.append(&gtk::SeparatorMenuItem::new());
+            separated = true;
+        }
+        let text = entry_label(entry);
         let item = if i < 9 {
             gtk::MenuItem::with_mnemonic(&format!("_{} {}", i + 1, text))
         } else {
@@ -78,7 +114,10 @@ pub fn show(state: Rc<State>) {
         menu.append(&item);
     }
 
-    menu.append(&gtk::SeparatorMenuItem::new());
+    if !entries.is_empty() {
+        menu.append(&gtk::SeparatorMenuItem::new());
+        menu.append(&pin_submenu(&state, &entries));
+    }
     let clear = gtk::MenuItem::with_mnemonic("_Clear history");
     {
         let state = state.clone();

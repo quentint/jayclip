@@ -13,6 +13,7 @@ pub struct Db {
 pub struct Entry {
     pub id: i64,
     pub content: String,
+    pub pinned: bool,
 }
 
 /// Microseconds since the epoch.
@@ -85,15 +86,21 @@ impl Db {
         self.prune(MAX_ENTRIES)
     }
 
+    /// All pinned entries, then the `limit` most recent unpinned ones.
+    /// Pinned entries do not count against the limit.
     pub fn recent(&self, limit: usize) -> rusqlite::Result<Vec<Entry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, content FROM entries
-             ORDER BY pinned DESC, used_at DESC, id DESC LIMIT ?1",
+            "SELECT id, content, pinned FROM entries
+             WHERE pinned = 1 OR id IN (
+               SELECT id FROM entries WHERE pinned = 0
+               ORDER BY used_at DESC, id DESC LIMIT ?1)
+             ORDER BY pinned DESC, used_at DESC, id DESC",
         )?;
         stmt.query_map([limit as i64], |r| {
             Ok(Entry {
                 id: r.get(0)?,
                 content: r.get(1)?,
+                pinned: r.get::<_, i64>(2)? != 0,
             })
         })?
         .collect()
@@ -115,7 +122,6 @@ impl Db {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn toggle_pin(&self, id: i64) -> rusqlite::Result<()> {
         self.conn
             .execute("UPDATE entries SET pinned = 1 - pinned WHERE id = ?1", [id])?;
@@ -160,6 +166,35 @@ mod tests {
         }
         db.prune(2).unwrap();
         assert_eq!(contents(&db), vec!["old", "e4", "e3"]);
+    }
+
+    #[test]
+    fn pinned_flag_is_reported_and_survives_recopy() {
+        let db = Db::open_in_memory().unwrap();
+        db.upsert("a").unwrap();
+        db.upsert("b").unwrap();
+        let a = db.recent(10).unwrap().into_iter().find(|e| e.content == "a").unwrap();
+        assert!(!a.pinned);
+        db.toggle_pin(a.id).unwrap();
+        db.upsert("a").unwrap(); // re-copy must not unpin
+        let list = db.recent(10).unwrap();
+        assert_eq!((list[0].content.as_str(), list[0].pinned), ("a", true));
+        assert!(!list[1].pinned);
+        db.toggle_pin(a.id).unwrap();
+        assert!(db.recent(10).unwrap().iter().all(|e| !e.pinned));
+    }
+
+    #[test]
+    fn limit_applies_to_unpinned_only() {
+        let db = Db::open_in_memory().unwrap();
+        db.upsert("pin").unwrap();
+        let id = db.recent(1).unwrap()[0].id;
+        db.toggle_pin(id).unwrap();
+        for i in 0..4 {
+            db.upsert(&format!("e{i}")).unwrap();
+        }
+        let got: Vec<String> = db.recent(2).unwrap().into_iter().map(|e| e.content).collect();
+        assert_eq!(got, vec!["pin", "e3", "e2"]);
     }
 
     #[test]
