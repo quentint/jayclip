@@ -117,6 +117,18 @@ impl Db {
         Ok(())
     }
 
+    /// Fold the WAL back into the main database file (used on shutdown).
+    pub fn checkpoint(&self) {
+        let r: rusqlite::Result<(i64, i64, i64)> = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            });
+        if let Err(e) = r {
+            eprintln!("diodon-next: checkpoint failed: {e}");
+        }
+    }
+
     pub fn clear(&self) -> rusqlite::Result<()> {
         self.conn.execute("DELETE FROM entries WHERE pinned = 0", [])?;
         Ok(())

@@ -70,13 +70,28 @@ const GRACE: std::time::Duration = std::time::Duration::from_millis(500);
 /// Show the history menu. `on_finish` runs once the interaction is over: the
 /// menu was dismissed, or the chosen entry has been pasted.
 pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
+    // A held or repeated shortcut can call us again while a menu is already
+    // up (or still retrying its grab). Ignore it instead of stacking menus.
+    if state.menu_active.replace(true) {
+        return;
+    }
+    let on_finish: Rc<dyn Fn()> = {
+        let state = state.clone();
+        Rc::new(move || {
+            state.menu_active.set(false);
+            on_finish();
+        })
+    };
+
     // Capture the focused window before our own UI steals focus.
     let target = paste::active_target();
 
     let Some(display) = gtk::gdk::Display::default() else {
+        on_finish();
         return;
     };
     let Some(pointer) = display.default_seat().and_then(|s| s.pointer()) else {
+        on_finish();
         return;
     };
     let (_, x, y) = pointer.position();

@@ -12,11 +12,33 @@ pub struct State {
     pub db: db::Db,
     /// Text we put on the clipboard ourselves, so the watcher can ignore it.
     pub last_set: RefCell<Option<String>>,
+    /// True from `show` until its interaction ends; blocks overlapping menus.
+    pub menu_active: std::cell::Cell<bool>,
 }
 
 const APP_ID: &str = "dev.quentin.DiodonNext";
 
+/// GTK warns on every failed menu grab; `menu.rs` retries on purpose while the
+/// shortcut keys are held, so that one message is just noise. GLib 2.80 routes
+/// these through the structured log writer, so filter there and pass every
+/// other message to the default writer unchanged.
+fn quiet_known_warnings() {
+    glib::log_set_writer_func(|level, fields| {
+        let noisy = fields.iter().any(|f| {
+            f.key() == "MESSAGE"
+                && f.value_str()
+                    .is_some_and(|m| m.contains("no trigger event for menu popup"))
+        });
+        if noisy {
+            glib::LogWriterOutput::Handled
+        } else {
+            glib::log_writer_default(level, fields)
+        }
+    });
+}
+
 fn main() -> glib::ExitCode {
+    quiet_known_warnings();
     let app = gtk::Application::new(
         Some(APP_ID),
         gio::ApplicationFlags::HANDLES_COMMAND_LINE,
@@ -39,6 +61,7 @@ fn main() -> glib::ExitCode {
             let st = Rc::new(State {
                 db,
                 last_set: RefCell::new(None),
+                menu_active: std::cell::Cell::new(false),
             });
             watcher::start(st.clone());
             let _ = state.set(st);
@@ -48,6 +71,7 @@ fn main() -> glib::ExitCode {
     app.connect_activate(|_| {});
 
     // Runs in the primary instance for every invocation, local or remote.
+    let cmd_state = state.clone();
     app.connect_command_line(move |app, cmd| {
         let args: Vec<String> = cmd
             .arguments()
@@ -58,7 +82,7 @@ fn main() -> glib::ExitCode {
         match args.first().map(String::as_str) {
             Some("daemon") => {}
             Some("show") => {
-                if let Some(st) = state.get() {
+                if let Some(st) = cmd_state.get() {
                     // Not remote means no daemon was running and this process
                     // became the primary instance. Do not linger as a hidden
                     // daemon: exit once the menu interaction is over.
@@ -80,5 +104,18 @@ fn main() -> glib::ExitCode {
         0
     });
 
-    app.run()
+    // Quit through the main loop on SIGTERM/SIGINT so we can clean up below.
+    for signum in [2, 15] {
+        let app = app.clone();
+        glib::unix_signal_add_local(signum, move || {
+            app.quit();
+            glib::ControlFlow::Break
+        });
+    }
+
+    let code = app.run();
+    if let Some(st) = state.get() {
+        st.db.checkpoint();
+    }
+    code
 }

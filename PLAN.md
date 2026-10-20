@@ -243,14 +243,20 @@ Status legend: [x] done, [ ] to do.
   (`no trigger event for menu popup`): no menu, and a leaked helper window.
   `menu.rs` retries `popup_at_widget` every 25 ms (up to 2 s) until the grab
   succeeds, and ends the interaction only after the menu was actually mapped.
-- [ ] **Quiet logs.** The retry loop makes GTK print one warning per attempt.
-  Install a GLib log handler that drops exactly that message (and keeps all
-  others), so a normal run prints nothing.
-- [ ] **Clean shutdown.** Handle SIGTERM and SIGINT (`glib::unix_signal_add`)
-  by quitting the application, so the SQLite WAL is checkpointed and the
-  process exits 0. Verify with `kill -TERM` and `kill -INT`, and that the
-  database reopens with all rows.
-- [ ] **Oversized text.** Verify: text just under `MAX_BYTES` (100 000) is
+- [x] **Quiet logs.** The retry loop made GTK print one warning per attempt.
+  GLib 2.80 sends these through the structured log writer (per-domain
+  handlers are bypassed), so `main.rs` installs a writer function that drops
+  exactly `no trigger event for menu popup` and forwards everything else to
+  the default writer. A normal run now prints nothing.
+- [x] **Overlapping `show` calls.** A held or repeated shortcut re-ran `show`
+  while a menu was still retrying its grab, leaking about 13 helper windows per
+  press. `State::menu_active` now makes later calls a no-op until the first
+  interaction ends.
+- [x] **Clean shutdown.** SIGTERM and SIGINT quit the application through the
+  main loop (`glib::unix_signal_add_local`); `main` then runs a
+  `wal_checkpoint(TRUNCATE)`. Verified: exit code 0, WAL file empty, all rows
+  present after reopening.
+- [x] **Oversized text.** Verified (99 999 B stored, 100 000 B stored, 100 001 B ignored, 20 MB ignored with RSS +11 MB and the daemon still responsive). Original checklist: text just under `MAX_BYTES` (100 000) is
   stored, just over is ignored, a multi-megabyte copy does not freeze the
   daemon or grow memory noticeably, and a normal copy still works afterwards.
   Also binary-ish text and labels containing `<`, `&` and `_`.
