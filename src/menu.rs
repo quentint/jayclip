@@ -23,6 +23,16 @@ pub fn label(content: &str) -> String {
     out.replace('_', "__")
 }
 
+/// Keypad digit 1-9 to a zero-based entry index.
+fn keypad_index(key: gtk::gdk::keys::Key) -> Option<usize> {
+    use gtk::gdk::keys::constants as k;
+    [
+        k::KP_1, k::KP_2, k::KP_3, k::KP_4, k::KP_5, k::KP_6, k::KP_7, k::KP_8, k::KP_9,
+    ]
+    .iter()
+    .position(|c| *c == key)
+}
+
 const PIN_MARK: &str = "★ ";
 
 fn entry_label(entry: &Entry) -> String {
@@ -87,6 +97,8 @@ pub fn show(state: Rc<State>) {
         menu.append(&item);
     }
     let mut separated = false;
+    // Entry items in display order, for keypad shortcuts.
+    let mut items: Vec<gtk::MenuItem> = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         // Separate the pinned block from the rest.
         if i > 0 && !entry.pinned && entries[i - 1].pinned && !separated {
@@ -112,7 +124,22 @@ pub fn show(state: Rc<State>) {
             paste::send_paste(target.borrow_mut().take());
         });
         menu.append(&item);
+        items.push(item);
     }
+
+    // Keypad 1-9 select entries by position. The top-row digits keep working
+    // through the mnemonics above (Shift+digit on AZERTY).
+    menu.connect_key_press_event(move |menu, event| {
+        match keypad_index(event.keyval()).and_then(|i| items.get(i)) {
+            Some(item) => {
+                // Activating directly bypasses GTK's own close-on-select path.
+                menu.popdown();
+                item.activate();
+                glib::Propagation::Stop
+            }
+            None => glib::Propagation::Proceed,
+        }
+    });
 
     if !entries.is_empty() {
         menu.append(&gtk::SeparatorMenuItem::new());
@@ -148,6 +175,16 @@ pub fn show(state: Rc<State>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keypad_digits_map_to_positions() {
+        use gtk::gdk::keys::constants as k;
+        assert_eq!(keypad_index(k::KP_1), Some(0));
+        assert_eq!(keypad_index(k::KP_9), Some(8));
+        assert_eq!(keypad_index(k::KP_0), None);
+        assert_eq!(keypad_index(k::_2), None);
+        assert_eq!(keypad_index(k::KP_End), None);
+    }
 
     #[test]
     fn flattens_and_escapes() {

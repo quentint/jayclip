@@ -214,7 +214,12 @@ Details:
    Activating one calls `db.toggle_pin(id)` and does not paste or touch the
    clipboard. The menu closes as usual; reopening shows the new order.
 4. Digit mnemonics (1-9) still apply to the main list in display order, so
-   pinned entries get the lowest numbers.
+   pinned entries get the lowest numbers. They match the produced character,
+   so on AZERTY the top row needs Shift (Shift+2 selects entry 2).
+   Keypad digits 1-9 also select entries by position (Num Lock on). They are
+   handled in a `key-press-event` handler on the menu that pops the menu down
+   and activates the item; out-of-range digits are ignored and other keys
+   (arrows, Enter, Escape, mnemonics) pass through unchanged.
 5. `Clear history` keeps pinned entries (`clear()` only deletes unpinned).
 
 Tests: `db.rs` covers the reported `pinned` flag, pins surviving a re-copy,
