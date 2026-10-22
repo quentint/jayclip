@@ -3,8 +3,17 @@ use std::time::Duration;
 
 /// Window class fragments (lowercase) of terminals that paste with Ctrl+Shift+V.
 const TERMINALS: &[&str] = &[
-    "terminal", "xterm", "kitty", "alacritty", "tilix", "konsole", "urxvt", "wezterm", "foot",
-    "terminator", "st-256color",
+    "terminal",
+    "xterm",
+    "kitty",
+    "alacritty",
+    "tilix",
+    "konsole",
+    "urxvt",
+    "wezterm",
+    "foot",
+    "terminator",
+    "st-256color",
 ];
 
 /// Delay between the menu closing and refocusing the target window.
@@ -34,7 +43,10 @@ pub fn active_target() -> Option<Target> {
 
 /// WM_CLASS via xprop; this xdotool version has no `getwindowclassname`.
 fn window_class(window: &str) -> String {
-    let Ok(out) = Command::new("xprop").args(["-id", window, "WM_CLASS"]).output() else {
+    let Ok(out) = Command::new("xprop")
+        .args(["-id", window, "WM_CLASS"])
+        .output()
+    else {
         return String::new();
     };
     // WM_CLASS(STRING) = "instance", "Class"

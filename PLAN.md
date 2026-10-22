@@ -62,8 +62,9 @@ src/
 
 ## Database
 
-This section describes the **v1 schema, which is in use today**. Phase 6
-replaces it with a v2 schema (hash-keyed, multi-format, storage budget).
+This section records the original v1 design. Phase 6a replaces it directly
+with the fresh v2 schema; because this app is still personal and undistributed,
+existing history is discarded rather than migrated.
 
 File: `$XDG_DATA_HOME/diodon-next/history.db` (default
 `~/.local/share/diodon-next/history.db`). The directory is created with
@@ -85,8 +86,9 @@ CREATE INDEX IF NOT EXISTS entries_used_at ON entries(used_at DESC);
 
 Operations in `db.rs`:
 
-- `open()`: create the directory and file, apply the pragmas, and run the
-  migration keyed on `user_version`.
+- Original v1 `open()`: create the directory and file, apply pragmas and create
+  the initial table. Phase 6a replaces it with the fresh v2 schema (no data
+  migration; the current personal history is intentionally reset).
 - `upsert(content)`: `INSERT ... ON CONFLICT(content) DO UPDATE SET used_at = excluded.used_at`.
   This is the dedupe: re-copying an old entry moves it to the top.
 - `recent(limit)`: returns every pinned entry plus the `limit` newest unpinned
@@ -99,9 +101,9 @@ Operations in `db.rs`:
   Re-copying a pinned entry keeps it pinned (the upsert only touches
   `used_at`).
 
-Constants: `MAX_ENTRIES = 50`, `MAX_BYTES = 100_000` (larger text is ignored).
-Both become settings in Phase 7, and `MAX_BYTES` disappears in Phase 6: the
-storage budget replaces any per-entry limit.
+Original constants were `MAX_ENTRIES = 50` and `MAX_BYTES = 100_000`. Phase 6a
+removes the per-item byte limit and enforces the 200 MB total budget instead;
+Phase 7 makes the budget and entry count configurable.
 
 ## Phase 0: environment setup
 
@@ -149,12 +151,10 @@ every time, from any app.
 2. `watcher.rs`:
    - `let cb = gtk::Clipboard::get(&gdk::SELECTION_CLIPBOARD);`
    - `cb.connect_owner_change(...)` then `cb.request_text(...)`.
-   - Skip when: text is `None`, empty or whitespace-only, longer than
-     `MAX_BYTES`, or equal to the entry we set ourselves (see Phase 3).
-   - Skip password-manager entries: request the targets with
-     `request_targets` and ignore the change if it lists
-     `x-kde-passwordManagerHint`.
-   - Otherwise call `db.upsert` and `db.prune`.
+   - Skip when: text is `None` or empty. Whitespace-only text is ignored.
+   - Skip password-manager entries: check for the
+     `x-kde-passwordManagerHint` target before requesting content.
+   - Otherwise call `db.upsert_text`; the storage budget prunes older rows.
 3. Share the `Connection` with `Rc<RefCell<...>>`. Everything runs on the GTK
    main thread, so no `Mutex` is needed.
 4. Do not watch `PRIMARY`. Highlighting text would flood the history.
@@ -178,9 +178,10 @@ the table never exceeds the cap.
    - The first 9 items get `_1` through `_9` mnemonics.
    - A separator, then `Clear history`.
 5. On item activation, `paste::paste(entry, window_id, class)`:
-   1. Start the self-change ignore window (see Phase 6a, "Self-change
-ignore window"; today the code still uses `last_set`).
-   2. `clipboard.set_text(content)` and `clipboard.store()`.
+    1. Set the self-change ignore deadline to now + 500 ms immediately before
+       writing the selected content to the clipboard.
+    2. `clipboard.set_text(content)` (future multi-format writes follow the
+       same 500 ms self-change window).
    3. Make sure the menu and helper window are gone. Wait about 50 ms
       (`glib::timeout_add_local_once`).
    4. `xdotool windowactivate --sync <id>`.
@@ -190,7 +191,7 @@ ignore window"; today the code still uses `last_set`).
       `ctrl+v`.
    6. `xdotool key --clearmodifiers <combo>`.
 6. Selecting an entry also bumps `used_at`. The watcher ignores our own
-   write, so `paste` bumps the entry directly (by id once Phase 6 lands).
+    write, so `paste` bumps the entry directly by ID.
 7. If the menu is dismissed without a choice, do nothing and do not refocus
    anything.
 
@@ -365,7 +366,12 @@ each leave the app working; do them in order.
   goes away.
 - **Rich text toggle** in settings (default on); images toggle too.
 
-### 6a. Schema v2, hash identity, storage budget (text only, no visible change except the markers)
+### 6a. Fresh schema v2, hash identity, storage budget (done; existing history reset)
+
+Implemented and verified in the code and on the personal database: 17 tests pass,
+clippy is clean; the 150 KB text test is stored intact. This step intentionally
+dropped the previous 51 entries; the running daemon now uses a fresh empty v2
+database. The next item is 6b (rich text).
 
 ```sql
 PRAGMA user_version = 2;
@@ -391,13 +397,13 @@ CREATE INDEX entries_used_at ON entries(used_at DESC);
 - **Hash input** is unambiguous: for each present format in a fixed order
   (text, html, rtf, image), feed a one-byte tag, the 8-byte length, then the
   bytes.
-- **Migration v1 to v2** rebuilds the table inside one transaction (SQLite
-  cannot drop the old `UNIQUE(content)` in place): copy the file to
-  `history.db.v1.bak` first, create the new table, copy rows computing each
-  hash in Rust (SQLite has no SHA-256), keep `pinned` and `used_at`, drop the
-  old table, set `user_version = 2`. Also set
-  `PRAGMA auto_vacuum = INCREMENTAL` and run one `VACUUM`, because a SQLite
-  file never shrinks otherwise.
+- **Fresh database, no migration.** On first open of the new build, delete the
+  old v1 `entries` table and create the v2 table empty. This intentionally
+  clears the user's current history; the app has not been distributed and the
+  user approved starting over. There is no migration or backup.
+- Set `PRAGMA auto_vacuum = INCREMENTAL` before creating the new table, then
+  `VACUUM` once. Run `PRAGMA incremental_vacuum` after budget eviction so the
+  database file can reclaim freed pages.
 - **Budget enforcement** after every insert, in one transaction: first the
   entry-count limit, then, while `SUM(size)` of unpinned rows exceeds the
   budget, delete the oldest unpinned row (by `used_at`). Then
@@ -411,10 +417,10 @@ CREATE INDEX entries_used_at ON entries(used_at DESC);
   `pinned`, a label source (first part of `text`), flags (`has_html`,
   `has_rtf`), `width`, `height` and `thumb`. A new `get(id)` loads the full
   entry only when one is picked.
-- **Self-change ignore window (replaces `last_set`).** When we write the
-  clipboard to paste an entry, the watcher would see our own write as a new
-  copy. Instead of comparing content, ignore owner-change events for a fixed
-  window after our write:
+- **Self-change ignore window.** When we write the clipboard to paste an
+  entry, the watcher would see our own write as a new copy. Instead of
+  comparing content, ignore owner-change events for a fixed window after our
+  write:
   - `State` holds `ignore_until: Cell<Option<Instant>>`. On pick, set it to
     `now + 500 ms` (constant `SELF_WRITE_WINDOW`) right before `set_text` /
     `set_image` / the multi-format write.
@@ -432,17 +438,16 @@ CREATE INDEX entries_used_at ON entries(used_at DESC);
     could stall the main thread for longer than the window (image encoding,
     thumbnails) runs on a worker, so a late event cannot land after the
     deadline.
-  - This also fixes a small existing bug: `last_set` is never cleared, so
-    after picking X, a later genuine copy of X from another app is ignored and
-    does not move X to the top. The deadline expires on its own. **Fix it only
-    when implementing this** (do not patch `last_set` separately).
+  - This fixes the existing stale-value bug: `last_set` was never cleared, so
+    after picking X, a later genuine copy of X from another app was ignored and
+    did not move X to the top. The deadline expires on its own.
   - Tests: pick, then check no extra row and no second bump; after the window
     passes, a copy of the same text moves it to the top again.
 - **Password hint** check is unchanged and still runs before anything is read
   or stored; `last_secret` compares plain text.
-- **Tests:** in-memory SQLite for migration (v1 file in, v2 out, pins and order
-  kept), hash determinism and ambiguity cases, dedupe, budget eviction (oldest
-  first, pinned kept, oversized newest kept), count limit, light `recent()`.
+- **Tests:** in-memory SQLite for the fresh v2 schema and user_version, hash
+  determinism and ambiguity cases, dedupe, budget eviction (oldest first,
+  pinned kept, oversized newest kept), count limit, light `recent()`.
 
 ### 6b. Rich text
 
@@ -636,9 +641,9 @@ Places to change:
 - Manual checklist after each phase, using real apps: Firefox, a text editor,
   gnome-terminal, an Electron app.
 - A debug log to stderr behind the `DIODON_DEBUG` environment variable.
-- For Phase 6: migration tests from a real v1 database copy, and a manual
-  matrix of source apps (browser, spreadsheet, office suite, terminal, image
-  editor) for rich text and images.
+- For Phase 6: fresh schema/hash/budget tests, and a manual matrix of source
+  apps (browser, spreadsheet, office suite, terminal, image editor) for rich
+  text and images.
 
 ## Known risks
 

@@ -17,7 +17,9 @@ pub fn label(content: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ");
     let mut out: String = line.chars().take(LABEL_CHARS).collect();
-    if line.chars().count() > LABEL_CHARS || content.lines().filter(|l| !l.trim().is_empty()).count() > 1 {
+    if line.chars().count() > LABEL_CHARS
+        || content.lines().filter(|l| !l.trim().is_empty()).count() > 1
+    {
         out.push('…');
     }
     out.replace('_', "__")
@@ -27,7 +29,15 @@ pub fn label(content: &str) -> String {
 fn keypad_index(key: gtk::gdk::keys::Key) -> Option<usize> {
     use gtk::gdk::keys::constants as k;
     [
-        k::KP_1, k::KP_2, k::KP_3, k::KP_4, k::KP_5, k::KP_6, k::KP_7, k::KP_8, k::KP_9,
+        k::KP_1,
+        k::KP_2,
+        k::KP_3,
+        k::KP_4,
+        k::KP_5,
+        k::KP_6,
+        k::KP_7,
+        k::KP_8,
+        k::KP_9,
     ]
     .iter()
     .position(|c| *c == key)
@@ -134,17 +144,27 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
         } else {
             gtk::MenuItem::with_label(&text.replace("__", "_"))
         };
-        let content = entry.content.clone();
+        let entry_id = entry.id;
         let state = state.clone();
         let target = target.clone();
         let pasting = pasting.clone();
         let on_finish = on_finish.clone();
         item.connect_activate(move |_| {
-            *state.last_set.borrow_mut() = Some(content.clone());
-            if let Err(e) = state.db.upsert(&content) {
+            let content = match state.db.get_text(entry_id) {
+                Ok(Some(content)) => content,
+                Ok(None) => return,
+                Err(e) => {
+                    eprintln!("diodon-next: db error: {e}");
+                    return;
+                }
+            };
+            if let Err(e) = state.db.touch(entry_id) {
                 eprintln!("diodon-next: db error: {e}");
             }
             let cb = watcher::clipboard();
+            state
+                .ignore_until
+                .set(Some(std::time::Instant::now() + crate::SELF_WRITE_WINDOW));
             cb.set_text(&content);
             pasting.set(true);
             let target = target.borrow_mut().take();

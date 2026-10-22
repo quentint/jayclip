@@ -10,8 +10,8 @@ use std::rc::Rc;
 
 pub struct State {
     pub db: db::Db,
-    /// Text we put on the clipboard ourselves, so the watcher can ignore it.
-    pub last_set: RefCell<Option<String>>,
+    /// Ignore clipboard owner-change events briefly after our own clipboard write.
+    pub ignore_until: std::cell::Cell<Option<std::time::Instant>>,
     /// Text of the last copy skipped for carrying the password-manager hint.
     pub last_secret: RefCell<Option<String>>,
     /// True from `show` until its interaction ends; blocks overlapping menus.
@@ -19,6 +19,7 @@ pub struct State {
 }
 
 const APP_ID: &str = "dev.quentin.DiodonNext";
+pub const SELF_WRITE_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// GTK warns on every failed menu grab; `menu.rs` retries on purpose while the
 /// shortcut keys are held, so that one message is just noise. GLib 2.80 routes
@@ -41,10 +42,7 @@ fn quiet_known_warnings() {
 
 fn main() -> glib::ExitCode {
     quiet_known_warnings();
-    let app = gtk::Application::new(
-        Some(APP_ID),
-        gio::ApplicationFlags::HANDLES_COMMAND_LINE,
-    );
+    let app = gtk::Application::new(Some(APP_ID), gio::ApplicationFlags::HANDLES_COMMAND_LINE);
 
     // Keep the process alive without any window.
     let state: Rc<OnceCell<Rc<State>>> = Rc::new(OnceCell::new());
@@ -62,7 +60,7 @@ fn main() -> glib::ExitCode {
             };
             let st = Rc::new(State {
                 db,
-                last_set: RefCell::new(None),
+                ignore_until: std::cell::Cell::new(None),
                 last_secret: RefCell::new(None),
                 menu_active: std::cell::Cell::new(false),
             });

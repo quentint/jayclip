@@ -171,8 +171,9 @@ Details:
 
 - Entries are listed newest first. Pinned entries (marked with a star) stay at
   the top and are never removed or cleared.
-- The newest 50 unpinned entries are kept. Text larger than 100 000 bytes is
-  ignored.
+- The newest 50 unpinned entries are kept, within a 200 MB storage budget.
+  There is no per-entry size limit; when the budget is exceeded, the oldest
+  unpinned entries are removed.
 - Picking an entry puts it on the clipboard, brings the previously focused
   window back to the front and sends Ctrl+V (Ctrl+Shift+V in terminals such as
   gnome-terminal, kitty, alacritty, xterm, tilix, konsole).
@@ -204,7 +205,7 @@ inspect it (Python 3 ships with Linux Mint):
 python3 - <<'PY'
 import sqlite3, os
 db = sqlite3.connect(os.path.expanduser('~/.local/share/diodon-next/history.db'))
-for pinned, text in db.execute('select pinned, substr(content, 1, 60) from entries order by pinned desc, used_at desc'):
+for pinned, text in db.execute('select pinned, substr(coalesce(text, \'\'), 1, 60) from entries order by pinned desc, used_at desc'):
     print(pinned, repr(text))
 PY
 ```
