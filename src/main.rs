@@ -1,5 +1,6 @@
 mod clipboard_out;
 mod db;
+mod image_support;
 mod menu;
 mod paste;
 mod watcher;

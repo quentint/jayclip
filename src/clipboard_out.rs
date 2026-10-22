@@ -77,6 +77,14 @@ mod tests {
                 .unwrap();
             assert_eq!(selection.data(), expected);
         }
+
+        let pixbuf =
+            gtk::gdk_pixbuf::Pixbuf::new(gtk::gdk_pixbuf::Colorspace::Rgb, true, 8, 12, 8).unwrap();
+        pixbuf.fill(0x3366ccff);
+        clipboard.set_image(&pixbuf);
+        assert!(clipboard.wait_is_image_available());
+        let received = clipboard.wait_for_image().unwrap();
+        assert_eq!((received.width(), received.height()), (12, 8));
     }
 
     #[test]

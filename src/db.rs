@@ -17,6 +17,9 @@ pub struct Formats {
     pub html: Option<Vec<u8>>,
     pub rtf: Option<Vec<u8>>,
     pub image: Option<Vec<u8>>,
+    pub thumb: Option<Vec<u8>>,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
 }
 
 impl Formats {
@@ -25,6 +28,7 @@ impl Formats {
             + self.html.as_ref().map_or(0, |b| b.len() as i64)
             + self.rtf.as_ref().map_or(0, |b| b.len() as i64)
             + self.image.as_ref().map_or(0, |b| b.len() as i64)
+            + self.thumb.as_ref().map_or(0, |b| b.len() as i64)
     }
 
     pub fn hash(&self) -> String {
@@ -53,6 +57,10 @@ pub struct Entry {
     pub pinned: bool,
     pub size: i64,
     pub has_rich: bool,
+    pub is_image: bool,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub thumb: Option<Vec<u8>>,
 }
 
 fn now() -> i64 {
@@ -145,11 +153,12 @@ impl Db {
         let tx = self.conn.unchecked_transaction()?;
         let used_at = next_used_at(&tx, timestamp)?;
         tx.execute(
-            "INSERT INTO entries (hash, kind, text, html, rtf, image, size, created_at, used_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+            "INSERT INTO entries (hash, kind, text, html, rtf, image, thumb, width, height, size, created_at, used_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
              ON CONFLICT(hash) DO UPDATE SET
                kind = excluded.kind, text = excluded.text, html = excluded.html,
-               rtf = excluded.rtf, image = excluded.image, size = excluded.size,
+               rtf = excluded.rtf, image = excluded.image, thumb = excluded.thumb,
+               width = excluded.width, height = excluded.height, size = excluded.size,
                used_at = excluded.used_at",
             params![
                 hash,
@@ -162,6 +171,9 @@ impl Db {
                 formats.html,
                 formats.rtf,
                 formats.image,
+                formats.thumb,
+                formats.width,
+                formats.height,
                 formats.size(),
                 used_at,
             ],
@@ -174,8 +186,11 @@ impl Db {
 
     pub fn recent(&self, limit: usize) -> rusqlite::Result<Vec<Entry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, hash, substr(COALESCE(text, '(formatted text)'), 1, 512), pinned, size,
-                    html IS NOT NULL OR rtf IS NOT NULL FROM entries
+            "SELECT id, hash,
+                    CASE WHEN kind = 'image' THEN printf('Image %d×%d', width, height)
+                         ELSE substr(COALESCE(text, '(formatted text)'), 1, 512) END,
+                    pinned, size, html IS NOT NULL OR rtf IS NOT NULL,
+                    kind = 'image', width, height, thumb FROM entries
              WHERE pinned = 1 OR id IN (
                SELECT id FROM entries WHERE pinned = 0
                ORDER BY used_at DESC, id DESC LIMIT ?1)
@@ -189,6 +204,10 @@ impl Db {
                 pinned: r.get::<_, i64>(3)? != 0,
                 size: r.get(4)?,
                 has_rich: r.get(5)?,
+                is_image: r.get(6)?,
+                width: r.get(7)?,
+                height: r.get(8)?,
+                thumb: r.get(9)?,
             })
         })?
         .collect()
@@ -197,7 +216,7 @@ impl Db {
     pub fn get_formats(&self, id: i64) -> rusqlite::Result<Option<Formats>> {
         self.conn
             .query_row(
-                "SELECT text, html, rtf, image FROM entries WHERE id = ?1",
+                "SELECT text, html, rtf, image, thumb, width, height FROM entries WHERE id = ?1",
                 [id],
                 |r| {
                     Ok(Formats {
@@ -205,6 +224,9 @@ impl Db {
                         html: r.get(1)?,
                         rtf: r.get(2)?,
                         image: r.get(3)?,
+                        thumb: r.get(4)?,
+                        width: r.get(5)?,
+                        height: r.get(6)?,
                     })
                 },
             )
@@ -346,6 +368,41 @@ mod tests {
         assert!(columns.contains(&"html".to_string()));
         assert!(columns.contains(&"image".to_string()));
         assert!(!columns.contains(&"content".to_string()));
+    }
+
+    #[test]
+    fn stores_image_data_dimensions_and_thumbnail() {
+        let db = Db::open_in_memory().unwrap();
+        let formats = Formats {
+            image: Some(b"png data".to_vec()),
+            thumb: Some(b"thumb data".to_vec()),
+            width: Some(800),
+            height: Some(600),
+            ..Formats::default()
+        };
+        let hash = db.upsert_formats(&formats).unwrap();
+        let entry = db.recent(1).unwrap().remove(0);
+        assert_eq!(entry.hash, hash);
+        assert!(entry.is_image);
+        assert_eq!((entry.width, entry.height), (Some(800), Some(600)));
+        assert_eq!(entry.thumb, Some(b"thumb data".to_vec()));
+        assert_eq!(entry.content, "Image 800×600");
+        assert_eq!(db.get_formats(entry.id).unwrap(), Some(formats));
+    }
+
+    #[test]
+    fn dedupes_identical_images_by_hash() {
+        let db = Db::open_in_memory().unwrap();
+        let image = Formats {
+            image: Some(b"same png bytes".to_vec()),
+            thumb: Some(b"same thumbnail".to_vec()),
+            width: Some(3),
+            height: Some(2),
+            ..Formats::default()
+        };
+        db.upsert_formats(&image).unwrap();
+        db.upsert_formats(&image).unwrap();
+        assert_eq!(db.recent(10).unwrap().len(), 1);
     }
 
     #[test]

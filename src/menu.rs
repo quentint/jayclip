@@ -1,5 +1,6 @@
 use crate::State;
 use crate::db::{Entry, MAX_ENTRIES};
+use crate::image_support;
 use crate::{clipboard_out, paste, watcher};
 use gtk::glib;
 use gtk::prelude::*;
@@ -81,8 +82,36 @@ fn keypad_index(key: gtk::gdk::keys::Key) -> Option<usize> {
     .position(|c| *c == key)
 }
 
+fn pixbuf_from_png(bytes: &[u8]) -> Option<gtk::gdk_pixbuf::Pixbuf> {
+    gtk::gdk_pixbuf::Pixbuf::from_read(std::io::Cursor::new(bytes.to_vec())).ok()
+}
+
+fn image_menu_item(entry: &Entry, label: &str) -> gtk::MenuItem {
+    let item = gtk::MenuItem::new();
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    if let Some(bytes) = entry.thumb.as_deref()
+        && let Some(pixbuf) = pixbuf_from_png(bytes)
+    {
+        row.pack_start(&gtk::Image::from_pixbuf(Some(&pixbuf)), false, false, 0);
+    }
+    let accel = gtk::AccelLabel::new(label);
+    accel.set_use_underline(true);
+    accel.set_xalign(0.0);
+    accel.set_accel_widget(Some(&item));
+    row.pack_start(&accel, true, true, 0);
+    item.add(&row);
+    item
+}
+
 fn entry_label(entry: &Entry) -> String {
-    let text = label(&entry.content);
+    let text = if entry.is_image {
+        match (entry.width, entry.height) {
+            (Some(width), Some(height)) => format!("Image {width}×{height}"),
+            _ => "Image".to_string(),
+        }
+    } else {
+        label(&entry.content)
+    };
     let mut markers = String::new();
     if entry.pinned {
         markers.push('📌');
@@ -182,10 +211,17 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
             separated = true;
         }
         let text = entry_label(entry);
-        let item = if i < 9 {
-            gtk::MenuItem::with_mnemonic(&format!("_{} {}", i + 1, text))
+        let label = if i < 9 {
+            format!("_{} {}", i + 1, text)
         } else {
-            gtk::MenuItem::with_label(&text.replace("__", "_"))
+            text.replace("__", "_")
+        };
+        let item = if entry.is_image {
+            image_menu_item(entry, &label)
+        } else if i < 9 {
+            gtk::MenuItem::with_mnemonic(&label)
+        } else {
+            gtk::MenuItem::with_label(&label)
         };
         let entry_id = entry.id;
         let state = state.clone();
@@ -208,10 +244,32 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
                 eprintln!("diodon-next: db error: {e}");
             }
             let cb = watcher::clipboard();
-            state
-                .ignore_until
-                .set(Some(std::time::Instant::now() + crate::SELF_WRITE_WINDOW));
             let plain_paste = current_event_requests_plain_paste();
+            if let Some(image) = formats.image.clone() {
+                let target = target.borrow_mut().take();
+                let on_finish = on_finish.clone();
+                let state = state.clone();
+                pasting.set(true);
+                glib::spawn_future_local(async move {
+                    let pixels =
+                        gtk::gio::spawn_blocking(move || image_support::decode_png(image)).await;
+                    match pixels {
+                        Ok(Some(pixels)) => {
+                            let pixbuf = image_support::pixbuf_from_pixels(pixels);
+                            state
+                                .ignore_until
+                                .set(Some(std::time::Instant::now() + crate::SELF_WRITE_WINDOW));
+                            watcher::clipboard().set_image(&pixbuf);
+                            paste::send_paste(target).await;
+                        }
+                        Ok(None) => eprintln!("diodon-next: could not decode stored image"),
+                        Err(e) => eprintln!("diodon-next: image decode task failed: {e:?}"),
+                    }
+                    glib::timeout_future(GRACE).await;
+                    on_finish();
+                });
+                return;
+            }
             if plain_paste {
                 if let Some(text) = formats.text.as_deref() {
                     cb.set_text(text);

@@ -1,5 +1,7 @@
 use crate::State;
 use crate::db::Formats;
+use crate::image_support::{self, EncodedImage};
+use gtk::glib;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -41,11 +43,20 @@ pub fn start(state: Rc<State>) {
         }
 
         cb.request_text(move |cb, text| {
-            let formats = Rc::new(RefCell::new(Formats {
-                text: text.map(|t| t.to_string()),
-                ..Formats::default()
-            }));
-            request_rich_formats(cb.clone(), targets, 0, formats, state);
+            if let Some(text) = text.filter(|text| !text.trim().is_empty()) {
+                let formats = Rc::new(RefCell::new(Formats {
+                    text: Some(text.to_string()),
+                    ..Formats::default()
+                }));
+                request_rich_formats(cb.clone(), targets, 0, formats, state);
+                return;
+            }
+            if !targets.is_empty() {
+                let formats = Rc::new(RefCell::new(Formats::default()));
+                request_rich_formats(cb.clone(), targets, 0, formats, state);
+                return;
+            }
+            request_png_image(cb.clone(), state);
         });
         None
     });
@@ -59,7 +70,14 @@ fn request_rich_formats(
     state: Rc<State>,
 ) {
     let Some(target) = targets.get(index).cloned() else {
-        finish_record(&state, formats);
+        let captured = formats.borrow();
+        if captured.text.is_none() && captured.html.is_none() && captured.rtf.is_none() {
+            drop(captured);
+            request_png_image(cb, state);
+        } else {
+            drop(captured);
+            finish_record(&state, formats);
+        }
         return;
     };
     let is_html = target == HTML_TARGET;
@@ -75,6 +93,46 @@ fn request_rich_formats(
         }
         request_rich_formats(cb.clone(), targets, index + 1, formats, state);
     });
+}
+
+fn request_png_image(clipboard: gtk::Clipboard, state: Rc<State>) {
+    clipboard.request_image(move |_, pixbuf| {
+        let Some(pixbuf) = pixbuf else {
+            return;
+        };
+        capture_image(image_support::copy_pixels(pixbuf), state);
+    });
+}
+
+fn capture_image(pixels: image_support::Pixels, state: Rc<State>) {
+    glib::MainContext::default().spawn_local(async move {
+        let Ok(Some(encoded)) =
+            gtk::gio::spawn_blocking(move || image_support::encode_pixels(pixels)).await
+        else {
+            return;
+        };
+        if state
+            .ignore_until
+            .get()
+            .is_some_and(|deadline| Instant::now() < deadline)
+        {
+            return;
+        }
+        let formats = formats_from_image(encoded);
+        if let Err(e) = state.db.upsert_formats(&formats) {
+            eprintln!("diodon-next: db error: {e}");
+        }
+    });
+}
+
+fn formats_from_image(encoded: EncodedImage) -> Formats {
+    Formats {
+        image: Some(encoded.png),
+        thumb: Some(encoded.thumbnail),
+        width: Some(encoded.width),
+        height: Some(encoded.height),
+        ..Formats::default()
+    }
 }
 
 fn finish_record(state: &State, formats: Rc<RefCell<Formats>>) {
