@@ -4,7 +4,9 @@ use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub const MAX_ENTRIES: usize = 50;
+pub const MAX_RETAINED_ENTRIES: usize = 100;
+pub const DEFAULT_DISPLAY_ENTRIES: usize = 20;
+pub const DISPLAY_ENTRY_OPTIONS: [usize; 5] = [5, 10, 20, 50, 100];
 pub const STORAGE_BUDGET_BYTES: i64 = 200 * 1024 * 1024;
 
 pub struct Db {
@@ -126,7 +128,63 @@ impl Db {
                  PRAGMA user_version = 2;",
             )?;
         }
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS settings (
+               key TEXT PRIMARY KEY NOT NULL,
+               value INTEGER NOT NULL
+             );",
+        )?;
         Ok(Db { conn })
+    }
+
+    pub fn do_not_store_passwords(&self) -> rusqlite::Result<bool> {
+        let value: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'do_not_store_passwords'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(value.unwrap_or(1) != 0)
+    }
+
+    pub fn set_do_not_store_passwords(&self, enabled: bool) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('do_not_store_passwords', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [i64::from(enabled)],
+        )?;
+        Ok(())
+    }
+
+    pub fn display_entries(&self) -> rusqlite::Result<usize> {
+        let value: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'display_entries'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(value
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|value| DISPLAY_ENTRY_OPTIONS.contains(value))
+            .unwrap_or(DEFAULT_DISPLAY_ENTRIES))
+    }
+
+    pub fn set_display_entries(&self, count: usize) -> rusqlite::Result<()> {
+        if !DISPLAY_ENTRY_OPTIONS.contains(&count) {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "display_entries must be one of 5, 10, 20, 50, 100".to_string(),
+            ));
+        }
+        self.conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('display_entries', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [count as i64],
+        )?;
+        Ok(())
     }
 
     pub fn upsert_text(&self, text: &str) -> rusqlite::Result<String> {
@@ -139,7 +197,7 @@ impl Db {
     }
 
     pub fn upsert_formats(&self, formats: &Formats) -> rusqlite::Result<String> {
-        self.upsert_formats_with_limits(formats, MAX_ENTRIES, STORAGE_BUDGET_BYTES)
+        self.upsert_formats_with_limits(formats, MAX_RETAINED_ENTRIES, STORAGE_BUDGET_BYTES)
     }
 
     fn upsert_formats_with_limits(
@@ -182,6 +240,10 @@ impl Db {
         tx.commit()?;
         self.conn.execute_batch("PRAGMA incremental_vacuum;")?;
         Ok(hash)
+    }
+
+    pub fn recent_display(&self) -> rusqlite::Result<Vec<Entry>> {
+        self.recent(self.display_entries()?)
     }
 
     pub fn recent(&self, limit: usize) -> rusqlite::Result<Vec<Entry>> {
@@ -262,7 +324,7 @@ impl Db {
     pub fn toggle_pin(&self, id: i64) -> rusqlite::Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         tx.execute("UPDATE entries SET pinned = 1 - pinned WHERE id = ?1", [id])?;
-        prune_tx(&tx, MAX_ENTRIES, STORAGE_BUDGET_BYTES, "")?;
+        prune_tx(&tx, MAX_RETAINED_ENTRIES, STORAGE_BUDGET_BYTES, "")?;
         tx.commit()?;
         Ok(())
     }
@@ -346,6 +408,34 @@ mod tests {
             }
             .hash()
         );
+    }
+
+    #[test]
+    fn password_recording_setting_defaults_on_and_persists_changes() {
+        let db = Db::open_in_memory().unwrap();
+        assert!(db.do_not_store_passwords().unwrap());
+        db.set_do_not_store_passwords(false).unwrap();
+        assert!(!db.do_not_store_passwords().unwrap());
+        db.set_do_not_store_passwords(true).unwrap();
+        assert!(db.do_not_store_passwords().unwrap());
+    }
+
+    #[test]
+    fn display_entry_setting_defaults_and_changes_without_pruning() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(db.display_entries().unwrap(), DEFAULT_DISPLAY_ENTRIES);
+        for index in 0..12 {
+            db.upsert_text(&format!("entry {index}")).unwrap();
+        }
+        db.set_display_entries(5).unwrap();
+        assert_eq!(db.display_entries().unwrap(), 5);
+        assert_eq!(db.recent_display().unwrap().len(), 5);
+        assert_eq!(db.recent(MAX_RETAINED_ENTRIES).unwrap().len(), 12);
+        db.set_display_entries(100).unwrap();
+        assert_eq!(db.display_entries().unwrap(), 100);
+        assert_eq!(db.recent_display().unwrap().len(), 12);
+        assert_eq!(db.recent(MAX_RETAINED_ENTRIES).unwrap().len(), 12);
+        assert!(db.set_display_entries(7).is_err());
     }
 
     #[test]
@@ -481,18 +571,30 @@ mod tests {
     }
 
     #[test]
+    fn retention_cap_is_fixed_at_one_hundred_entries() {
+        let db = Db::open_in_memory().unwrap();
+        for index in 0..MAX_RETAINED_ENTRIES + 3 {
+            db.upsert_text(&format!("entry {index}")).unwrap();
+        }
+        assert_eq!(
+            db.recent(MAX_RETAINED_ENTRIES + 10).unwrap().len(),
+            MAX_RETAINED_ENTRIES
+        );
+    }
+
+    #[test]
     fn count_limit_keeps_pinned_and_newest() {
         let db = Db::open_in_memory().unwrap();
         db.upsert_text("pin").unwrap();
         let id = db.recent(1).unwrap()[0].id;
         db.toggle_pin(id).unwrap();
-        for i in 0..(MAX_ENTRIES + 3) {
+        for i in 0..(MAX_RETAINED_ENTRIES + 3) {
             db.upsert_text(&format!("e{i}")).unwrap();
         }
         let got = contents(&db);
-        assert_eq!(got.len(), MAX_ENTRIES + 1);
+        assert_eq!(got.len(), MAX_RETAINED_ENTRIES + 1);
         assert_eq!(got[0], "pin");
-        assert_eq!(got[1], format!("e{}", MAX_ENTRIES + 2));
+        assert_eq!(got[1], format!("e{}", MAX_RETAINED_ENTRIES + 2));
     }
 
     #[test]
@@ -510,9 +612,12 @@ mod tests {
             text: Some("c".repeat(20)),
             ..Formats::default()
         };
-        db.upsert_formats_with_limits(&a, MAX_ENTRIES, 10).unwrap();
-        db.upsert_formats_with_limits(&b, MAX_ENTRIES, 10).unwrap();
-        db.upsert_formats_with_limits(&c, MAX_ENTRIES, 10).unwrap();
+        db.upsert_formats_with_limits(&a, MAX_RETAINED_ENTRIES, 10)
+            .unwrap();
+        db.upsert_formats_with_limits(&b, MAX_RETAINED_ENTRIES, 10)
+            .unwrap();
+        db.upsert_formats_with_limits(&c, MAX_RETAINED_ENTRIES, 10)
+            .unwrap();
         let entries = db.recent(10).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content, c.text.unwrap());
@@ -525,7 +630,7 @@ mod tests {
             text: Some("p".repeat(50)),
             ..Formats::default()
         };
-        db.upsert_formats_with_limits(&pinned, MAX_ENTRIES, 10)
+        db.upsert_formats_with_limits(&pinned, MAX_RETAINED_ENTRIES, 10)
             .unwrap();
         let id = db.recent(10).unwrap()[0].id;
         db.toggle_pin(id).unwrap();
@@ -534,7 +639,7 @@ mod tests {
                 text: Some("old".into()),
                 ..Formats::default()
             },
-            MAX_ENTRIES,
+            MAX_RETAINED_ENTRIES,
             10,
         )
         .unwrap();
@@ -542,7 +647,7 @@ mod tests {
             text: Some("new".repeat(4)),
             ..Formats::default()
         };
-        db.upsert_formats_with_limits(&new, MAX_ENTRIES, 10)
+        db.upsert_formats_with_limits(&new, MAX_RETAINED_ENTRIES, 10)
             .unwrap();
         let entries = db.recent(10).unwrap();
         assert!(entries.iter().any(|e| e.pinned));

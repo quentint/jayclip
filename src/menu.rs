@@ -4,9 +4,8 @@ mod popup;
 
 use crate::State;
 use crate::clipboard_out;
-use crate::db::MAX_ENTRIES;
 use crate::image_support;
-use crate::{paste, watcher};
+use crate::{paste, settings, watcher};
 use gtk::glib;
 use gtk::prelude::*;
 use std::cell::{Cell, RefCell};
@@ -64,7 +63,7 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
     helper.show_all();
 
     let menu = gtk::Menu::new();
-    let entries = state.db.recent(MAX_ENTRIES).unwrap_or_default();
+    let entries = state.db.recent_display().unwrap_or_default();
     let target = Rc::new(RefCell::new(target));
     let pasting = Rc::new(Cell::new(false));
     let on_hide = {
@@ -140,6 +139,7 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
             }
         });
     }
+    menu.append(&settings::submenu(state.clone()));
     menu.append(&clear);
     menu.show_all();
     popup::popup(menu, helper, on_hide, on_finish);

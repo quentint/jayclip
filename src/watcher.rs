@@ -27,7 +27,9 @@ pub fn start(state: Rc<State>) {
             return None;
         }
         let write_generation = state.clipboard_write_generation.get();
-        if cb.wait_is_target_available(&gtk::gdk::Atom::intern(PASSWORD_HINT)) {
+        if state.do_not_store_passwords.get()
+            && cb.wait_is_target_available(&gtk::gdk::Atom::intern(PASSWORD_HINT))
+        {
             *state.last_secret.borrow_mut() = cb.wait_for_text().map(|t| t.to_string());
             return None;
         }

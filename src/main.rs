@@ -3,6 +3,7 @@ mod db;
 mod image_support;
 mod menu;
 mod paste;
+mod settings;
 mod watcher;
 
 use gtk::gio::{self, prelude::*};
@@ -12,6 +13,7 @@ use std::rc::Rc;
 
 pub struct State {
     pub db: db::Db,
+    pub do_not_store_passwords: std::cell::Cell<bool>,
     /// Ignore clipboard owner-change events briefly after our own clipboard write.
     pub ignore_until: std::cell::Cell<Option<std::time::Instant>>,
     /// Changes whenever we write our own clipboard content, invalidating pending reads.
@@ -62,8 +64,16 @@ fn main() -> glib::ExitCode {
                     std::process::exit(1);
                 }
             };
+            let do_not_store_passwords = match db.do_not_store_passwords() {
+                Ok(enabled) => enabled,
+                Err(e) => {
+                    eprintln!("diodon-next: could not load settings: {e}");
+                    true
+                }
+            };
             let st = Rc::new(State {
                 db,
+                do_not_store_passwords: std::cell::Cell::new(do_not_store_passwords),
                 ignore_until: std::cell::Cell::new(None),
                 clipboard_write_generation: std::cell::Cell::new(0),
                 last_secret: RefCell::new(None),
@@ -89,9 +99,6 @@ fn main() -> glib::ExitCode {
             Some("daemon") => {}
             Some("show") => {
                 if let Some(st) = cmd_state.get() {
-                    // Not remote means no daemon was running and this process
-                    // became the primary instance. Do not linger as a hidden
-                    // daemon: exit once the menu interaction is over.
                     let on_finish: Rc<dyn Fn()> = if cmd.is_remote() {
                         Rc::new(|| {})
                     } else {

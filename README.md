@@ -11,9 +11,9 @@ This is a personal tool, not a distributable product. It is written in Rust with
 GTK 3, and it only works on X11. Wayland sessions are not supported.
 
 Current scope: plain text, rich text (`text/html`, `text/rtf`, and
-`application/rtf` when offered), and PNG clipboard images. A settings window is
-planned (see `PLAN.md`). Rich-text entries are marked 🤖 and paste rich by
-default; Shift+Enter and Shift+click paste plain text.
+`application/rtf` when offered), and PNG clipboard images. Settings include
+**Do not store passwords**, enabled by default. Rich-text entries are marked 🤖
+and paste rich by default; Shift+Enter and Shift+click paste plain text.
 
 ## Requirements
 
@@ -183,15 +183,20 @@ Details:
   always paste the rich/default form.
 - Entries are listed newest first. Pinned entries (marked 📌) stay at the top
   and are never removed or cleared.
-- The newest 50 unpinned entries are kept, within a 200 MB storage budget.
-  There is no per-entry size limit; when the budget is exceeded, the oldest
-  unpinned entries are removed.
+- The history retains up to 100 unpinned entries, within a fixed 200 MB storage
+  budget. There is no per-entry size limit; when either hard limit is reached,
+  the oldest unpinned entries are removed.
+- Settings → History size selects how many recent entries the menu displays
+  (5, 10, 20, 50 or 100; default 20). Changing this only changes the displayed count; it
+  does not delete entries. Pinned entries remain visible above the recent list.
 - Picking an entry puts it on the clipboard, brings the previously focused
   window back to the front and sends Ctrl+V (Ctrl+Shift+V in terminals such as
   gnome-terminal, kitty, alacritty, xterm, tilix, konsole).
-- Copies from password managers that set the `x-kde-passwordManagerHint`
-  marker are not recorded (tested with a simulated source; confirmed with the
-  author's own password manager).
+- **Do not store passwords** is enabled by default. It skips copies only when
+  the source offers `x-kde-passwordManagerHint`. Some password managers or
+  desktop clipboard services do not preserve this X11 hint, so this is best
+  effort; keep the password manager's clipboard-clearing timer enabled. Turning
+  the setting on shows this explanation for confirmation.
 - Only the regular clipboard is watched, not the "select to copy" primary
   selection.
 

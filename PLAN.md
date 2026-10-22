@@ -548,49 +548,46 @@ as an image.
 - Default budget (200 MB) is a guess; revisit after real use. Pinned entries
   do not count toward it (decided in 6a), so a user who pins many large images
   can exceed it on purpose.
-- README: update the usage section when this lands (it still describes the
-  100 000-byte limit and the star).
 
-## Phase 7: settings window in the main menu (no status icon)
+## Phase 7: settings submenu (in progress; first settings implemented, no window or status icon)
 
 A tray icon was considered and dropped: it would need `libxapp` and an FFI
-shim, against the "few dependencies" goal, and the main menu is where the user
-already is. The menu gets two new entries:
+shim, against the "few dependencies" goal. Settings live in a submenu in the
+history menu.
 
 ```
 ...entries...
--------------------
 Pin / unpin  >
-Pause recording        <- check item
-Settings...
+Settings  >
+  Do not store passwords   <- check item
+  History size             >
+    5 / 10 / 20 / 50 / 100 <- radio choices; current choice checked
 Clear history
 ```
 
-1. **Settings storage.** A `settings` table in the existing SQLite database
-   (key/value), loaded into `State` at startup. Defaults apply when a key is
-   missing. No extra file format, no new crate.
-2. **Settings list.**
-   - Skip password-manager copies (default on).
-   - Record rich text (default on).
-   - Record images (default on).
-   - Maximum number of entries (default 50).
-   - Storage budget in MB (default 200).
-   - A `Quit daemon` button.
-
-   Deliberately **not** a setting: the plain paste behaviour (Shift+Enter /
-   Shift+click), per Phase 6.
-3. **Settings window.** A plain `gtk::Window` with check buttons and spin
-   buttons. Changes apply immediately in the running daemon; lowering the entry
-   count or the budget prunes right away. Opened from the menu item and by
-   `diodon-next settings` (forwarded to the daemon like `show`).
-4. **One-shot mode.** When `show` runs without a daemon, choosing `Settings...`
-   must keep the process alive until the window closes (treat it like a paste
-   in progress for `on_finish`), then exit.
-5. **Pause recording.** A check item in the menu: while on, the watcher stores
-   nothing (the clipboard itself keeps working). State persists in settings.
-6. **Trade-off to document.** With no tray icon there is no visible sign that
-   the daemon runs. The README covers `pgrep`, `diodon-next quit` and the
-   Quit button.
+1. **Settings storage.** The SQLite `settings` table stores preferences;
+   defaults apply when a key is absent. Implemented for
+   `do_not_store_passwords` (default on). No extra file format or crate.
+2. **Do not store passwords.** Implemented in the submenu. Enabling prompts
+   with an explanation of the X11 target hint, its limitations and the password
+   manager clipboard-clearing timer. Unchecking saves immediately without an
+   alert. This remains best-effort because some sources omit the hint.
+3. **History size (implemented).** The Settings submenu offers radio choices
+   5, 10, 20, 50 and 100 (default 20), with the current setting checked. This changes only
+   how many recent unpinned entries the menu lists; changing it never deletes
+   entries. A separate fixed retention cap keeps at most 100 unpinned entries;
+   pinned entries are exempt.
+4. **Storage budget.** Fixed at 200 MB; deliberately not a user setting.
+   Budget eviction continues to remove oldest unpinned entries when needed.
+5. **Other future controls.** Record-rich-text and record-images toggles,
+   pause recording, and quit daemon remain planned. Plain-paste gestures remain
+   deliberately not configurable.
+6. **No one-shot settings window.** The submenu stays within the history menu,
+   so there is no separate window lifecycle to keep alive in one-shot mode.
+7. **Trade-off to document.** With no tray icon there is no visible sign that
+   the daemon runs; document `pgrep` and `diodon-next quit` in the README.
+8. **Tests.** Database tests verify each visible count leaves retained entries
+   intact and rejects values outside 5, 10, 20, 50 and 100.
 
 ## Phase 8: README and clean-install documentation (done: `README.md`)
 
