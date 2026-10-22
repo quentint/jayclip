@@ -10,10 +10,10 @@ window that had focus.
 This is a personal tool, not a distributable product. It is written in Rust with
 GTK 3, and it only works on X11. Wayland sessions are not supported.
 
-Current scope: plain text plus rich text (`text/html`, `text/rtf`, and
-`application/rtf` when offered). Images and a settings window are planned (see
-`PLAN.md`). Rich-text entries are marked 🤖 and paste their rich form by default;
-Shift+Enter and Shift+click paste the plain-text form.
+Current scope: plain text, rich text (`text/html`, `text/rtf`, and
+`application/rtf` when offered), and PNG clipboard images. A settings window is
+planned (see `PLAN.md`). Rich-text entries are marked 🤖 and paste rich by
+default; Shift+Enter and Shift+click paste plain text.
 
 ## Requirements
 
@@ -174,6 +174,10 @@ Details:
 - Entries offering HTML or RTF are marked 🤖. The menu shows their plain-text
   label; selecting one pastes rich content by default. Rich formats supported
   are `text/html`, `text/rtf`, and `application/rtf` when offered.
+- Image-only clipboard entries are stored as PNG. Their menu row includes a
+  thumbnail scaled to fit within 48×48 pixels (aspect ratio preserved) and the
+  original dimensions; selecting one pastes the image. If a clipboard offers
+  usable text and an image together, text is stored.
 - Shift+Enter and Shift+click paste the plain-text form for entries that have
   one. Shift on top-row digit mnemonics or keypad shortcuts is ignored: those
   always paste the rich/default form.

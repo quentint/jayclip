@@ -357,8 +357,9 @@ each leave the app working; do them in order.
   the plain text instead. That "plain mode" exists only for those two
   gestures: it is deliberately ignored for every shortcut (keypad digits,
   mnemonics, anything else), and it is **not a setting**.
-- **Markers, in this order before the label:** 📌 pinned, 📸 image, 🤖 rich
-  text. They combine (`📌🤖 text`). They replace the old star.
+- **Markers, in this order before the label:** 📌 pinned and 🤖 rich text.
+  They combine (`📌🤖 text`). Images use their thumbnail preview instead of an
+  emoji marker. The pin marker replaces the old star.
 - **Storage budget, no per-entry limit.** History is limited by a total size
   budget (default 200 MB, a guess to adjust) plus the entry count. When the
   budget is exceeded, the oldest unpinned entries are removed silently. No
@@ -487,24 +488,31 @@ GTK clipboard round-trip test verifies target bytes.
   HTML-only copy, and the unsafe module run under `cargo test` with a real
   display.
 
-### 6c. Images
+### 6c. Images (implemented)
 
-- **Capture** only when no plain text is offered. Read `image/png` raw bytes
-  with `wait_for_contents` (no decode and re-encode of large screenshots);
-  fall back to `wait_for_image` and encode PNG with `gdk_pixbuf` when the
-  source offers another format. Hash the PNG bytes.
-- **Off the main thread.** Thumbnail creation (scale to about 48 px high, PNG)
-  and any re-encoding run on a worker (`gio::spawn_blocking`, passing only
-  `Vec<u8>`; `PixbufLoader` objects are created and used inside the worker).
-  The main thread then does the insert. This keeps the daemon answering other
-  applications' clipboard requests while a big image is processed.
-- **Menu.** An image row shows the thumbnail and `📸 Image 1920x1080`, built as
-  a `gtk::MenuItem` containing a box with an image and an accel label (so
-  mnemonics and keypad digits still work).
-- **Paste.** Decode the PNG into a pixbuf and `Clipboard::set_image`. Shift
-  has no effect on images (there is no alternate form).
-- **Tests:** PNG round trip, same image copied twice gives one row, eviction
-  by budget, manual paste into a browser, an image editor and a chat app.
+Implemented and verified in X11: an image-only clipboard is captured as PNG,
+stored with a thumbnail and dimensions, previewed in the menu, and pasted back
+as an image.
+
+- **Capture.** When there is no text or rich text, request an image pixbuf and
+  encode it to PNG. If an offer includes both usable text and an image, text
+  currently wins.
+- **Off the main thread.** Copy pixel bytes on the GTK thread, then encode PNG
+  and scale/encode the thumbnail in `gio::spawn_blocking`; GTK pixbuf objects
+  do not cross threads. Store results on the GTK thread.
+- **Identity and size.** Hash the original PNG only. Thumbnail bytes and
+  dimensions are stored as metadata and count toward the storage budget, but
+  do not change image identity.
+- **Menu.** Image rows show a thumbnail scaled to fit within 48×48 pixels
+  (aspect ratio preserved) and `Image WIDTH×HEIGHT`, with an accelerator label
+  in a regular `gtk::MenuItem` (the GTK 3 ImageMenuItem binding is not available
+  in this gtk-rs version). Keypad and digit shortcuts continue to work.
+- **Paste.** Decode PNG bytes off the GTK thread into raw pixel data, rebuild
+  the pixbuf on the GTK thread and call `Clipboard::set_image`. The normal
+  target window paste keystroke follows.
+- **Tests:** generated PNG encode/decode and thumbnail dimensions, image DB
+  round trip/hash dedupe, and X11 clipboard image offer/read-back. Manual
+  image-editor/chat-app checks remain to do.
 
 ### 6d. Shift+Enter and Shift+click (plain paste; implemented)
 
