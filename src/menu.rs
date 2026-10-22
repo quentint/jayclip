@@ -1,6 +1,6 @@
 use crate::State;
 use crate::db::{Entry, MAX_ENTRIES};
-use crate::{paste, watcher};
+use crate::{clipboard_out, paste, watcher};
 use gtk::glib;
 use gtk::prelude::*;
 use std::rc::Rc;
@@ -43,14 +43,19 @@ fn keypad_index(key: gtk::gdk::keys::Key) -> Option<usize> {
     .position(|c| *c == key)
 }
 
-const PIN_MARK: &str = "★ ";
-
 fn entry_label(entry: &Entry) -> String {
     let text = label(&entry.content);
+    let mut markers = String::new();
     if entry.pinned {
-        format!("{PIN_MARK}{text}")
-    } else {
+        markers.push('📌');
+    }
+    if entry.has_rich {
+        markers.push('🤖');
+    }
+    if markers.is_empty() {
         text
+    } else {
+        format!("{markers} {text}")
     }
 }
 
@@ -150,9 +155,12 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
         let pasting = pasting.clone();
         let on_finish = on_finish.clone();
         item.connect_activate(move |_| {
-            let content = match state.db.get_text(entry_id) {
-                Ok(Some(content)) => content,
-                Ok(None) => return,
+            let formats = match state.db.get_formats(entry_id) {
+                Ok(Some(formats)) => formats,
+                Ok(None) => {
+                    eprintln!("diodon-next: entry not found: {entry_id}");
+                    return;
+                }
                 Err(e) => {
                     eprintln!("diodon-next: db error: {e}");
                     return;
@@ -165,7 +173,11 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
             state
                 .ignore_until
                 .set(Some(std::time::Instant::now() + crate::SELF_WRITE_WINDOW));
-            cb.set_text(&content);
+            if !clipboard_out::set_rich(&cb, formats.clone())
+                && let Some(text) = formats.text.as_deref()
+            {
+                cb.set_text(text);
+            }
             pasting.set(true);
             let target = target.borrow_mut().take();
             let on_finish = on_finish.clone();

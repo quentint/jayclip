@@ -10,8 +10,10 @@ window that had focus.
 This is a personal tool, not a distributable product. It is written in Rust with
 GTK 3, and it only works on X11. Wayland sessions are not supported.
 
-Current scope: **text only**. Images and a settings window are planned (see
-`PLAN.md`).
+Current scope: plain text plus rich text (`text/html`, `text/rtf`, and
+`application/rtf` when offered). Images and a settings window are planned (see
+`PLAN.md`). Rich-text entries are marked 🤖 and paste their rich form by default;
+Shift+Enter and Shift+click plain paste are not implemented yet.
 
 ## Requirements
 
@@ -165,12 +167,17 @@ Copy things as usual. Press your shortcut: a menu opens at the pointer.
 | Top-row digits `1`-`9` | Paste the entry at that position. On an AZERTY keyboard this needs Shift (Shift+2 selects entry 2) |
 | `P` | Open the *Pin / unpin* submenu |
 | `C` | Clear history (pinned entries are kept) |
-| Escape or click outside | Close the menu |
+| Escape | Close the menu |
 
 Details:
 
-- Entries are listed newest first. Pinned entries (marked with a star) stay at
-  the top and are never removed or cleared.
+- Entries offering HTML or RTF are marked 🤖. The menu shows their plain-text
+  label; selecting one pastes rich content by default. Rich formats supported
+  are `text/html`, `text/rtf`, and `application/rtf` when offered.
+- Shift+Enter and Shift+click to paste plain text are planned but not
+  implemented yet.
+- Entries are listed newest first. Pinned entries (marked 📌) stay at the top
+  and are never removed or cleared.
 - The newest 50 unpinned entries are kept, within a 200 MB storage budget.
   There is no per-entry size limit; when the budget is exceeded, the oldest
   unpinned entries are removed.

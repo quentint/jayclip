@@ -1,3 +1,4 @@
+mod clipboard_out;
 mod db;
 mod menu;
 mod paste;

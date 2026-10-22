@@ -52,6 +52,7 @@ pub struct Entry {
     pub content: String,
     pub pinned: bool,
     pub size: i64,
+    pub has_rich: bool,
 }
 
 fn now() -> i64 {
@@ -173,7 +174,8 @@ impl Db {
 
     pub fn recent(&self, limit: usize) -> rusqlite::Result<Vec<Entry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, hash, substr(COALESCE(text, ''), 1, 512), pinned, size FROM entries
+            "SELECT id, hash, substr(COALESCE(text, '(formatted text)'), 1, 512), pinned, size,
+                    html IS NOT NULL OR rtf IS NOT NULL FROM entries
              WHERE pinned = 1 OR id IN (
                SELECT id FROM entries WHERE pinned = 0
                ORDER BY used_at DESC, id DESC LIMIT ?1)
@@ -186,14 +188,26 @@ impl Db {
                 content: r.get(2)?,
                 pinned: r.get::<_, i64>(3)? != 0,
                 size: r.get(4)?,
+                has_rich: r.get(5)?,
             })
         })?
         .collect()
     }
 
-    pub fn get_text(&self, id: i64) -> rusqlite::Result<Option<String>> {
+    pub fn get_formats(&self, id: i64) -> rusqlite::Result<Option<Formats>> {
         self.conn
-            .query_row("SELECT text FROM entries WHERE id = ?1", [id], |r| r.get(0))
+            .query_row(
+                "SELECT text, html, rtf, image FROM entries WHERE id = ?1",
+                [id],
+                |r| {
+                    Ok(Formats {
+                        text: r.get(0)?,
+                        html: r.get(1)?,
+                        rtf: r.get(2)?,
+                        image: r.get(3)?,
+                    })
+                },
+            )
             .optional()
     }
 

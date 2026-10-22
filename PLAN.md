@@ -449,23 +449,31 @@ CREATE INDEX entries_used_at ON entries(used_at DESC);
   determinism and ambiguity cases, dedupe, budget eviction (oldest first,
   pinned kept, oversized newest kept), count limit, light `recent()`.
 
-### 6b. Rich text
+### 6b. Rich text (implemented; toggle deferred to Phase 7)
 
-- **Capture.** After the password-hint check, read plain text and, if the
-  rich setting is on, the whitelisted formats `text/html` and `text/rtf` via
-  `wait_for_contents`/`request_contents`. Ignore every other target (for
-  example `chromium/x-source-url`). Bytes are stored exactly as offered.
+Implemented and verified: captures HTML and RTF, stores them with plain text,
+marks rows 🤖, and offers all stored formats by default on paste. GTK clipboard
+round-trip test verifies target bytes; 19 tests pass and clippy is clean.
+
+- **Capture.** After the password-hint check, read plain text and the
+  whitelisted formats `text/html`, `text/rtf`, or `application/rtf` when
+  offered, via `request_contents`. Ignore every other target (for example
+  `chromium/x-source-url`). Bytes are stored exactly as offered.
+- **Current implementation:** watcher capture, SHA-256 dedupe/storage, the 🤖
+  menu marker, and rich-default clipboard ownership are implemented. GTK's
+  `Clipboard::set_with_data` binding handles the multi-target callback without
+  adding a dependency or writing unsafe code. The GTK clipboard round-trip
+  test verifies plain, HTML and RTF bytes. Shift+Enter and Shift+click plain
+  paste are deliberately not implemented in this step.
 - **What becomes an entry**, in order: plain text present, so a text entry
   (with html/rtf attached when offered); else an image target present, so an
   image entry (6c); else only HTML or RTF, so a rich entry whose label is the
   fixed text `(formatted text)` plus its size. No tag stripping: we never
   parse HTML.
 - **Paste.** Rich (default): offer `text/html`, `text/rtf` and plain text
-  together. Plain (Shift+Enter, Shift+click only): `set_text`, as today. The
-  bindings do not wrap `gtk_clipboard_set_with_data`, so this needs one
-  `unsafe` call, isolated in a small module (`clip_out.rs`) through
-  `gtk::ffi`. The callback hands out the right bytes per requested target;
-  the clear callback drops the boxed data. It only copies byte buffers.
+  together through `Clipboard::set_with_data`. GTK's Rust binding owns the
+  callback lifetime; no new dependency and no unsafe code. Shift+Enter and
+  Shift+click plain paste are deferred and deliberately not implemented now.
 - **Security rules** (keep them): never render or parse the HTML (no webview,
   no sanitiser crate); store only the whitelisted formats; the menu always
   shows the plain text, so what is visible is never HTML; the 🤖 marker is the
