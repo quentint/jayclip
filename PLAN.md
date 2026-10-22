@@ -178,7 +178,8 @@ the table never exceeds the cap.
    - The first 9 items get `_1` through `_9` mnemonics.
    - A separator, then `Clear history`.
 5. On item activation, `paste::paste(entry, window_id, class)`:
-   1. Record the content as `last_set` so the watcher ignores our own change.
+   1. Start the self-change ignore window (see Phase 6a, "Self-change
+ignore window"; today the code still uses `last_set`).
    2. `clipboard.set_text(content)` and `clipboard.store()`.
    3. Make sure the menu and helper window are gone. Wait about 50 ms
       (`glib::timeout_add_local_once`).
@@ -188,9 +189,8 @@ the table never exceeds the cap.
       `konsole`, `xfce4-terminal`, `gnome-terminal`, `st`, `urxvt`), otherwise
       `ctrl+v`.
    6. `xdotool key --clearmodifiers <combo>`.
-6. Selecting an entry also bumps `used_at` through the normal watcher path.
-   With `last_set` suppression, call `db.upsert` directly in `paste` so the
-   entry still moves to the top.
+6. Selecting an entry also bumps `used_at`. The watcher ignores our own
+   write, so `paste` bumps the entry directly (by id once Phase 6 lands).
 7. If the menu is dismissed without a choice, do nothing and do not refocus
    anything.
 
@@ -411,10 +411,33 @@ CREATE INDEX entries_used_at ON entries(used_at DESC);
   `pinned`, a label source (first part of `text`), flags (`has_html`,
   `has_rtf`), `width`, `height` and `thumb`. A new `get(id)` loads the full
   entry only when one is picked.
-- **Self-change check** (`last_set`) compares hashes instead of text. If
-  testing shows that reading our own clipboard write back gives a different
-  hash (encoding or newline changes), fall back to ignoring the next
-  owner-change event(s) within a short window after we set the clipboard.
+- **Self-change ignore window (replaces `last_set`).** When we write the
+  clipboard to paste an entry, the watcher would see our own write as a new
+  copy. Instead of comparing content, ignore owner-change events for a fixed
+  window after our write:
+  - `State` holds `ignore_until: Cell<Option<Instant>>`. On pick, set it to
+    `now + 500 ms` (constant `SELF_WRITE_WINDOW`) right before `set_text` /
+    `set_image` / the multi-format write.
+  - The watcher returns early while `now < ignore_until`, before it reads any
+    clipboard content. No hashing, no byte comparison, so it works the same for
+    text, HTML, RTF and images, whatever the read-back looks like.
+  - The window covers a burst: one user action can produce several
+    `owner-change` events (seen with the session's clipboard service).
+  - The entry is bumped to the top **by id** at pick time (`touch(id)`), not
+    by re-reading the clipboard.
+  - It starts at the write, not for the whole paste: our own events arrive
+    within milliseconds, so the `xdotool` steps need no extra protection.
+  - Known cost: a genuine copy made by hand inside the 500 ms is ignored;
+    judged negligible because the user is pasting at that moment. Work that
+    could stall the main thread for longer than the window (image encoding,
+    thumbnails) runs on a worker, so a late event cannot land after the
+    deadline.
+  - This also fixes a small existing bug: `last_set` is never cleared, so
+    after picking X, a later genuine copy of X from another app is ignored and
+    does not move X to the top. The deadline expires on its own. **Fix it only
+    when implementing this** (do not patch `last_set` separately).
+  - Tests: pick, then check no extra row and no second bump; after the window
+    passes, a copy of the same text moves it to the top again.
 - **Password hint** check is unchanged and still runs before anything is read
   or stored; `last_secret` compares plain text.
 - **Tests:** in-memory SQLite for migration (v1 file in, v2 out, pins and order
@@ -630,5 +653,5 @@ Places to change:
 | Rich paste inserts more than the menu shows | 🤖 marker, plain text always shown, Shift+Enter for plain, never render HTML |
 | Huge copies stall the daemon | Image work on a worker thread; budget eviction in one transaction |
 | `unsafe` clipboard FFI call | Isolated module, byte copying only, round-trip tests |
-| Our own clipboard write read back with a different hash | Hash first, short ignore window as fallback |
+| Our own clipboard write recorded as a new copy | 500 ms ignore window after each write (no content comparison) |
 | SQLite file never shrinks | `auto_vacuum = INCREMENTAL` plus `incremental_vacuum` after eviction |
