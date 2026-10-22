@@ -93,6 +93,10 @@ To start it right now, without logging out:
 setsid ~/.cargo/bin/diodon-next daemon >/dev/null 2>&1 &
 ```
 
+If clipboard entries stop appearing, check `pgrep -ax diodon-next`. If the
+`daemon` process is missing, start it again with the command above; new copies
+are recorded only while it is running.
+
 ### 5. Add the global shortcut
 
 The shortcut runs `diodon-next show`.
