@@ -3,27 +3,40 @@
 A small personal clipboard manager for Linux Mint (Cinnamon) on **X11**,
 inspired by [Diodon](https://github.com/diodon-dev/diodon).
 
-It keeps your clipboard history in a local SQLite database. A global shortcut
-opens a native menu at the mouse pointer; picking an entry pastes it into the
-window that had focus.
+Everything you copy is saved to a private, on-disk history. Press a global
+shortcut and a menu pops up right where your mouse is; pick an entry and it is
+pasted straight into whatever window you were using.
 
-This is a personal tool, not a distributable product. It is written in Rust with
-GTK 3, and it only works on X11. Wayland sessions are not supported.
+**What it handles:** plain text, rich text (HTML and RTF), and images (PNG).
+Passwords are skipped by default. Rich-text entries paste with their formatting
+intact, but you can paste them as plain text when you want to.
 
-Current scope: plain text, rich text (`text/html`, `text/rtf`, and
-`application/rtf` when offered), and PNG clipboard images. Settings include
-**Do not store passwords**, enabled by default. Rich-text entries are marked 🤖
-and paste rich by default; Shift+Enter and Shift+click paste plain text.
+> This is a personal tool, not a distributable product. It is written in Rust
+> with GTK 3 and works only on X11 — Wayland sessions are not supported.
+
+## At a glance
+
+Once installed and running, you:
+
+1. Copy things normally, all day.
+2. Press your shortcut (for example `Super+V`) to open the history menu.
+3. Press `1`-`9`, click, or use the arrow keys to paste an entry.
+
+| Marker | Meaning |
+|---|---|
+| 📌 | Pinned — stays at the top, never auto-removed |
+| 🤖 | Has rich formatting (HTML/RTF); pastes formatted by default |
+| (thumbnail) | An image entry |
 
 ## Requirements
 
-- Linux Mint 22.x (Cinnamon), X11. Tested on Mint 22.3; the build was also
-  verified from scratch on a stock Ubuntu 24.04 container
-- A user account with `sudo` for the one-time package install
-- About 1.5 GB of disk space for the Rust toolchain and the build, and a few
-  minutes for the first compile
+- Linux Mint 22.x (Cinnamon) running on **X11**. Tested on Mint 22.3; the build
+  was also verified from scratch on a stock Ubuntu 24.04 container.
+- A user account with `sudo`, for the one-time package install.
+- About 1.5 GB of free disk space for the Rust toolchain and the build, plus a
+  few minutes for the first compile.
 
-Check you are on X11:
+First, confirm you are on X11 (Wayland will not work):
 
 ```sh
 echo $XDG_SESSION_TYPE   # must print: x11
@@ -31,25 +44,30 @@ echo $XDG_SESSION_TYPE   # must print: x11
 
 ## Install
 
-### 1. System packages
+The install is a one-time, six-step setup. Steps 1–5 get it running; step 6 is
+only needed if you already use another clipboard manager.
+
+### 1. Install the system packages
 
 ```sh
 sudo apt update
 sudo apt install build-essential pkg-config libgtk-3-dev xdotool x11-utils curl git
 ```
 
-| Package | Why |
+What each one is for:
+
+| Package | Why it is needed |
 |---|---|
-| `build-essential`, `pkg-config` | C compiler and library lookup. SQLite is compiled from bundled sources, so no `libsqlite3-dev` is needed. |
+| `build-essential`, `pkg-config` | C compiler and library lookup. SQLite is compiled from bundled sources, so `libsqlite3-dev` is **not** required. |
 | `libgtk-3-dev` | GTK 3 headers for the build |
 | `xdotool` | Refocuses the target window and sends Ctrl+V |
-| `x11-utils` | `xprop`, used to read the focused window's class (to paste with Ctrl+Shift+V in terminals) |
+| `x11-utils` | Provides `xprop`, used to detect terminals so paste uses Ctrl+Shift+V there |
 | `curl`, `git` | Fetch rustup and this repository |
 
-### 2. Rust toolchain
+### 2. Install the Rust toolchain
 
-Use `rustup`: the Rust in Ubuntu 24.04's apt repository (1.75) is too old for
-this project, which uses the 2024 edition (Rust 1.85 or newer).
+Use `rustup`. The Rust shipped in Ubuntu 24.04's apt repository (1.75) is too
+old — this project uses the 2024 edition and needs Rust 1.85 or newer.
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -68,11 +86,14 @@ cd diodon-next
 cargo install --path . --locked
 ```
 
-This puts the binary at `~/.cargo/bin/diodon-next`. The commands below use the
-absolute path, because desktop sessions do not always have that directory on
-`PATH`.
+This places the binary at `~/.cargo/bin/diodon-next`. The commands below use the
+full path on purpose, because desktop sessions do not always have that directory
+on `PATH`.
 
-### 4. Start the daemon at login
+### 4. Start the background daemon at login
+
+The daemon is what watches the clipboard and records your history. Set it to
+start automatically:
 
 ```sh
 mkdir -p ~/.config/autostart
@@ -87,28 +108,29 @@ X-GNOME-Autostart-enabled=true
 EOF
 ```
 
-To start it right now, without logging out:
+To start it right now, without logging out and back in:
 
 ```sh
 setsid ~/.cargo/bin/diodon-next daemon >/dev/null 2>&1 &
 ```
 
-If clipboard entries stop appearing, check `pgrep -ax diodon-next`. If the
-`daemon` process is missing, start it again with the command above; new copies
-are recorded only while it is running.
+> **Tip:** if new copies stop showing up, the daemon has probably stopped. Check
+> with `pgrep -ax diodon-next`; if it is gone, run the command above again.
+> Copies are only recorded while the daemon is running.
 
 ### 5. Add the global shortcut
 
-The shortcut runs `diodon-next show`.
+The shortcut simply runs `diodon-next show` to open the menu. Set it up either
+way:
 
-**With the GUI:** open *Menu → Preferences → Keyboard → Shortcuts → Custom
-Shortcuts*, click *Add custom shortcut*, then:
+**Using the GUI (easiest):** open *Menu → Preferences → Keyboard → Shortcuts →
+Custom Shortcuts*, click *Add custom shortcut*, then fill in:
 
-- Name: `diodon-next`
-- Command: `/home/<you>/.cargo/bin/diodon-next show` (use your real home path)
-- Click the binding column and press your shortcut, for example `Super+V`.
+- **Name:** `diodon-next`
+- **Command:** `/home/<you>/.cargo/bin/diodon-next show` (use your real home path)
+- Click the binding column and press the keys you want, for example `Super+V`.
 
-**From a terminal** (this sets the same thing):
+**Using the terminal (does the same thing):**
 
 ```sh
 BIN="$HOME/.cargo/bin/diodon-next"
@@ -129,12 +151,12 @@ if [ "$CURRENT" = "@as []" ]; then NEW="['$ID']"; else NEW=$(echo "$CURRENT" | s
 gsettings set $KB custom-list "$NEW"
 ```
 
-Replace `<Super>v` with another binding if you prefer, for example
-`<Primary><Alt>v`. If the shortcut is already used by something else, Cinnamon
-shows a conflict in the Keyboard settings; free it there first.
+Prefer a different key? Replace `<Super>v` with another binding, such as
+`<Primary><Alt>v`. If the combination is already taken, Cinnamon flags a
+conflict in the Keyboard settings — free it there first.
 
-If you edit an existing shortcut's command from the command line and Cinnamon
-does not pick it up, re-write the list to make it reload:
+If you later change an existing shortcut's command from the terminal and
+Cinnamon does not notice, force it to reload the list:
 
 ```sh
 L=org.cinnamon.desktop.keybindings
@@ -144,8 +166,8 @@ gsettings set $L custom-list "['__dummy__']"; sleep 1; gsettings set $L custom-l
 
 ### 6. Replace another clipboard manager (optional)
 
-Two clipboard managers running at once fight over the clipboard. If you used
-Diodon or CopyQ, stop them and keep them from starting:
+Two clipboard managers running at once will fight over the clipboard. If you
+previously used Diodon or CopyQ, stop them and keep them from starting again:
 
 ```sh
 pkill -x diodon; pkill -x copyq
@@ -157,73 +179,102 @@ grep -q '^X-GNOME-Autostart-enabled' ~/.config/autostart/diodon-autostart.deskto
   || echo 'X-GNOME-Autostart-enabled=false' >> ~/.config/autostart/diodon-autostart.desktop
 ```
 
-Also remove or repoint Diodon's old keyboard shortcut (Keyboard → Shortcuts →
-Custom Shortcuts), or it will keep launching Diodon.
+Also remove or repoint Diodon's old keyboard shortcut (*Keyboard → Shortcuts →
+Custom Shortcuts*), or it will keep relaunching Diodon.
 
 ## Usage
 
-Copy things as usual. Press your shortcut: a menu opens at the pointer.
+Copy things as usual. When you need something back, press your shortcut and the
+history menu opens at the mouse pointer.
+
+### Keys in the menu
 
 | Key | Action |
 |---|---|
-| Up / Down, Enter | Move and paste the selected entry |
-| Keypad `1`-`9` | Paste the entry at that position (Num Lock on) |
-| Top-row digits `1`-`9` | Paste the entry at that position. On an AZERTY keyboard this needs Shift (Shift+2 selects entry 2) |
+| Up / Down, then Enter | Move to an entry and paste it |
+| `1`-`9` (top-row digits) | Paste the entry at that position. On an AZERTY keyboard use Shift (Shift+2 for entry 2) |
+| `1`-`9` (keypad, Num Lock on) | Paste the entry at that position |
 | `P` | Open the *Pin / unpin* submenu |
-| Escape | Close the menu |
+| Escape | Close the menu without pasting |
+| Shift+Enter or Shift+click | Paste the **plain-text** version of an entry |
 
-Details:
+### How pasting works
 
-- Entries offering HTML or RTF are marked 🤖. The menu shows their plain-text
-  label; selecting one pastes rich content by default. Rich formats supported
-  are `text/html`, `text/rtf`, and `application/rtf` when offered.
-- Image-only clipboard entries are stored as PNG. Their menu row includes a
-  thumbnail scaled to fit within 48×48 pixels (aspect ratio preserved) and the
-  original dimensions; selecting one pastes the image. If a clipboard offers
-  usable text and an image together, text is stored.
-- Shift+Enter and Shift+click paste the plain-text form for entries that have
-  one. Shift on top-row digit mnemonics or keypad shortcuts is ignored: those
-  always paste the rich/default form.
-- Entries are listed newest first. Pinned entries (marked 📌) stay at the top
-  and are never removed or cleared.
-- The history retains up to 100 unpinned entries, within a fixed 200 MB storage
-  budget. There is no per-entry size limit; when either hard limit is reached,
-  the oldest unpinned entries are removed.
-- In Settings, **[ ] Pause recording** is unchecked while recording is active;
-  check it to pause adding entries to history without affecting clipboard use.
-  The label never changes, and the choice persists across daemon restarts.
-  **Clear history** removes unpinned entries and keeps pinned ones.
-- Settings → History size selects how many recent entries the menu displays
-  (5, 10, 20, 50 or 100; default 20). Changing this only changes the displayed count; it
-  does not delete entries. Pinned entries remain visible above the recent list.
-- Picking an entry puts it on the clipboard, brings the previously focused
-  window back to the front and sends Ctrl+V (Ctrl+Shift+V in terminals such as
-  gnome-terminal, kitty, alacritty, xterm, tilix, konsole).
-- **Do not store passwords** is enabled by default. It skips copies only when
-  the source offers `x-kde-passwordManagerHint`. Some password managers or
-  desktop clipboard services do not preserve this X11 hint, so this is best
-  effort; keep the password manager's clipboard-clearing timer enabled. Turning
-  the setting on shows this explanation for confirmation.
-- Only the regular clipboard is watched, not the "select to copy" primary
-  selection.
+When you pick an entry, diodon-next copies it to the clipboard, brings your
+previous window back to the front, and sends the paste keystroke for you:
+Ctrl+V normally, or Ctrl+Shift+V in terminals (gnome-terminal, kitty,
+alacritty, xterm, tilix, konsole, and similar).
 
-Commands:
+Rich-text entries (marked 🤖) paste **with their formatting** by default. Use
+Shift+Enter or Shift+click to paste the plain-text version instead. Note that
+Shift is ignored for the digit and keypad shortcuts — those always paste the
+default (formatted) version.
+
+Only the normal clipboard is watched, not the "select to copy" primary
+selection.
+
+### Rich text and images
+
+- **Rich text** entries offer HTML or RTF and are marked 🤖. The menu shows a
+  plain-text preview; pasting keeps the formatting. Supported formats are
+  `text/html`, `text/rtf`, and `application/rtf` when the source provides them.
+- **Images** are stored as PNG. The menu row shows a thumbnail (scaled to fit
+  within 48×48 pixels, aspect ratio preserved) alongside the original
+  dimensions; pasting pastes the image. If a copy contains both usable text and
+  an image, the text is stored.
+
+### Pinning, history size, and cleanup
+
+- Entries are listed newest first. **Pinned** entries (📌) stay at the top and
+  are never auto-removed or cleared.
+- History keeps up to **100 unpinned entries** within a **200 MB** storage
+  budget. There is no per-entry size limit; when either limit is reached, the
+  oldest unpinned entries are dropped.
+- **Settings → History size** controls how many recent entries the menu *shows*
+  (5, 10, 20, 50, or 100; default 20). This only changes the displayed count —
+  it never deletes anything. Pinned entries always appear above the recent list.
+- **Settings → Clear history** removes unpinned entries and keeps pinned ones.
+- **Settings → Pause recording** is unchecked while recording is active; check
+  it to temporarily stop adding entries (the clipboard still works normally).
+  The choice persists across daemon restarts.
+
+### Passwords
+
+**Do not store passwords** is on by default. It skips a copy only when the
+source advertises the `x-kde-passwordManagerHint` clipboard hint.
+
+> **Caveat:** some password managers and desktop clipboard services do not
+> preserve this X11 hint, so protection is best-effort. Keep your password
+> manager's clipboard-clearing timer enabled. Turning the setting on shows this
+> same explanation for confirmation.
+
+### Commands
+
+You normally never run these by hand — autostart and the shortcut do it — but
+they are available:
 
 ```sh
 diodon-next daemon   # run the background process (autostart does this)
 diodon-next show     # open the menu (the shortcut does this)
-diodon-next quit     # stop the daemon (no Quit menu item)
+diodon-next quit     # stop the daemon (there is no Quit menu item)
 ```
 
-If `show` is run while no daemon is running, it starts the menu once and exits
-afterwards; nothing is recorded in that case.
+If you run `show` while no daemon is running, the menu opens once and exits
+afterwards, and nothing is recorded during that time.
 
-## Where the data lives
+## Where your data lives
 
-`~/.local/share/diodon-next/history.db` (SQLite, in WAL mode, so you will also
-see `-wal` and `-shm` files while the daemon runs). The directory is created
-with mode `0700` and the file `0600`, since history may contain secrets. To
-inspect it (Python 3 ships with Linux Mint):
+Your history is a single SQLite database:
+
+```
+~/.local/share/diodon-next/history.db
+```
+
+It runs in WAL mode, so you will also see `-wal` and `-shm` files while the
+daemon is running. Because history can contain secrets, the directory is created
+with mode `0700` and the file with `0600`.
+
+To peek at what is stored (Python 3 ships with Linux Mint):
 
 ```sh
 python3 - <<'PY'
@@ -258,29 +309,29 @@ Shortcuts*.
 
 **The shortcut does nothing.**
 Check the daemon is running (`pgrep -ax diodon-next`) and that the menu opens
-from a terminal (`~/.cargo/bin/diodon-next show`). If that works but the
+when run directly (`~/.cargo/bin/diodon-next show`). If that works but the
 shortcut does not, the shortcut's command is wrong or Cinnamon did not reload
-it; re-write the list as shown in step 5. Another program may also own the
-same key combination.
+it — re-apply it as in step 5. Another program may also own the same key
+combination.
 
-**The menu appears but nothing is pasted.**
+**The menu appears but nothing gets pasted.**
 Make sure `xdotool` is installed (`command -v xdotool`). Some applications
-ignore synthetic key presses (remote desktop clients, some games). The entry
-is still on the clipboard, so paste it by hand.
+ignore synthetic key presses (remote desktop clients, some games). The entry is
+still on the clipboard, so you can paste it by hand.
 
-**It pastes `v` or does something odd in a terminal.**
-The terminal's window class is not in the built-in list, so Ctrl+V was sent
-instead of Ctrl+Shift+V. Check the class with `xprop WM_CLASS` (click the
+**It pastes a stray `v`, or does something odd in a terminal.**
+Your terminal's window class is not in the built-in list, so Ctrl+V was sent
+instead of Ctrl+Shift+V. Find the class with `xprop WM_CLASS` (then click the
 window) and add it to `TERMINALS` in `src/paste.rs`.
 
 **The build fails with "The system library `atk` / `gdk-3.0` required ... was
 not found".**
-`libgtk-3-dev` is missing; install it (step 1).
+`libgtk-3-dev` is missing — install it (step 1).
 
-**The build fails complaining about the `edition` or an unknown feature.**
+**The build fails complaining about `edition` or an unknown feature.**
 You are probably using the old apt Rust (1.75 on Ubuntu 24.04). Check with
-`which cargo`: it should be `~/.cargo/bin/cargo`. Install via `rustup`
-(step 2) and open a new terminal.
+`which cargo`: it should be `~/.cargo/bin/cargo`. Install via `rustup` (step 2)
+and open a new terminal.
 
 **Another clipboard manager keeps restoring old content.**
 Stop it (step 6). Also check `pgrep -ax "diodon|copyq|clipit|parcellite|gpaste"`.
