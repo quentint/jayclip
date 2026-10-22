@@ -13,7 +13,7 @@ GTK 3, and it only works on X11. Wayland sessions are not supported.
 Current scope: plain text plus rich text (`text/html`, `text/rtf`, and
 `application/rtf` when offered). Images and a settings window are planned (see
 `PLAN.md`). Rich-text entries are marked 🤖 and paste their rich form by default;
-Shift+Enter and Shift+click plain paste are not implemented yet.
+Shift+Enter and Shift+click paste the plain-text form.
 
 ## Requirements
 
@@ -174,8 +174,9 @@ Details:
 - Entries offering HTML or RTF are marked 🤖. The menu shows their plain-text
   label; selecting one pastes rich content by default. Rich formats supported
   are `text/html`, `text/rtf`, and `application/rtf` when offered.
-- Shift+Enter and Shift+click to paste plain text are planned but not
-  implemented yet.
+- Shift+Enter and Shift+click paste the plain-text form for entries that have
+  one. Shift on top-row digit mnemonics or keypad shortcuts is ignored: those
+  always paste the rich/default form.
 - Entries are listed newest first. Pinned entries (marked 📌) stay at the top
   and are never removed or cleared.
 - The newest 50 unpinned entries are kept, within a 200 MB storage budget.

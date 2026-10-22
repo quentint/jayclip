@@ -452,8 +452,9 @@ CREATE INDEX entries_used_at ON entries(used_at DESC);
 ### 6b. Rich text (implemented; toggle deferred to Phase 7)
 
 Implemented and verified: captures HTML and RTF, stores them with plain text,
-marks rows 🤖, and offers all stored formats by default on paste. GTK clipboard
-round-trip test verifies target bytes; 19 tests pass and clippy is clean.
+marks rows 🤖, and offers all stored formats by default on paste. Shift+Enter and
+Shift+click select the plain form; digit and keypad shortcuts ignore Shift.
+GTK clipboard round-trip test verifies target bytes.
 
 - **Capture.** After the password-hint check, read plain text and the
   whitelisted formats `text/html`, `text/rtf`, or `application/rtf` when
@@ -463,8 +464,8 @@ round-trip test verifies target bytes; 19 tests pass and clippy is clean.
   menu marker, and rich-default clipboard ownership are implemented. GTK's
   `Clipboard::set_with_data` binding handles the multi-target callback without
   adding a dependency or writing unsafe code. The GTK clipboard round-trip
-  test verifies plain, HTML and RTF bytes. Shift+Enter and Shift+click plain
-  paste are deliberately not implemented in this step.
+   test verifies plain, HTML and RTF bytes. Plain-mode selection is described
+   in 6d.
 - **What becomes an entry**, in order: plain text present, so a text entry
   (with html/rtf attached when offered); else an image target present, so an
   image entry (6c); else only HTML or RTF, so a rich entry whose label is the
@@ -473,7 +474,7 @@ round-trip test verifies target bytes; 19 tests pass and clippy is clean.
 - **Paste.** Rich (default): offer `text/html`, `text/rtf` and plain text
   together through `Clipboard::set_with_data`. GTK's Rust binding owns the
   callback lifetime; no new dependency and no unsafe code. Shift+Enter and
-  Shift+click plain paste are deferred and deliberately not implemented now.
+  Shift+click plain paste are implemented in 6d.
 - **Security rules** (keep them): never render or parse the HTML (no webview,
   no sanitiser crate); store only the whitelisted formats; the menu always
   shows the plain text, so what is visible is never HTML; the 🤖 marker is the
@@ -505,27 +506,26 @@ round-trip test verifies target bytes; 19 tests pass and clippy is clean.
 - **Tests:** PNG round trip, same image copied twice gives one row, eviction
   by budget, manual paste into a browser, an image editor and a chat app.
 
-### 6d. Shift+Enter and Shift+click (plain paste)
+### 6d. Shift+Enter and Shift+click (plain paste; implemented)
 
-The menu cannot tell a mouse click from a keystroke in its `activate` signal,
-so decide from the triggering event. One function, `wants_plain(event type,
-keyval, state)`, used by every entry's activate handler:
-
-- true only for a key press of `Return`, `KP_Enter` or `ISO_Enter` with Shift
-  held, or a button release with Shift held;
-- false for everything else, in particular key presses of digits and keypad
-  digits (the AZERTY top row needs Shift to type a digit, so Shift being held
-  there means nothing) and calls made by the keypad handler.
-
-The decision comes from `gtk::current_event()` inside the handler, with the
-keypad handler marking its own activations as non-plain. Unit-test the
-function with the combinations above; verify manually with real Shift+Enter,
-Shift+click and Shift+digit on this AZERTY keyboard.
+- Plain paste is selected only by Shift+Enter (including keypad Enter) or
+  Shift+click. Both require an entry with a plain-text form.
+- `gtk::current_event()` is not sufficient for Shift+Enter in GTK's menu
+  activation callback, so the menu's key-press handler intercepts the selected
+  item and activates it explicitly. The activation callback recognizes
+  Shift+click from the triggering button-release event.
+- Digit mnemonics and keypad digit shortcuts always paste the rich/default
+  form. This matters on AZERTY, where top-row digit shortcuts themselves need
+  Shift; Shift+2 still selects entry 2 and does not request plain paste.
+- Verified with GTK/X11: Shift+click yields plain-only clipboard targets;
+  Shift+Enter invokes the selected item; Shift+2 retains HTML and RTF targets.
+  Unit tests cover Return variants, Shift+click, unshifted Enter, Shift+digits,
+  and Shift+keypad digits.
 
 ### Open points for Phase 6
 
-- Confirm in a prototype that `gtk::current_event()` is the key or button
-  event during menu activation (6d).
+- Test Shift+Enter and Shift+click manually in a real target app (synthetic
+  X11 testing confirmed the event routing and plain/rich clipboard targets).
 - Default budget (200 MB) is a guess; revisit after real use. Pinned entries
   do not count toward it (decided in 6a), so a user who pins many large images
   can exceed it on purpose.

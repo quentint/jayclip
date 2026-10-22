@@ -7,6 +7,44 @@ use std::rc::Rc;
 
 const LABEL_CHARS: usize = 60;
 
+fn plain_paste_for_event(
+    event_type: gtk::gdk::EventType,
+    key: Option<gtk::gdk::keys::Key>,
+    state: gtk::gdk::ModifierType,
+) -> bool {
+    if !state.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
+        return false;
+    }
+    match event_type {
+        gtk::gdk::EventType::KeyPress => {
+            use gtk::gdk::keys::constants as k;
+            matches!(key, Some(k::Return | k::KP_Enter | k::ISO_Enter))
+        }
+        gtk::gdk::EventType::ButtonRelease => true,
+        _ => false,
+    }
+}
+
+fn shift_enter(key: gtk::gdk::keys::Key, state: gtk::gdk::ModifierType) -> bool {
+    use gtk::gdk::keys::constants as k;
+    state.contains(gtk::gdk::ModifierType::SHIFT_MASK)
+        && matches!(key, k::Return | k::KP_Enter | k::ISO_Enter)
+}
+
+fn current_event_requests_plain_paste() -> bool {
+    let Some(event) = gtk::current_event() else {
+        return false;
+    };
+    if let Some(key_event) = event.downcast_ref::<gtk::gdk::EventKey>() {
+        return shift_enter(key_event.keyval(), key_event.state());
+    }
+    plain_paste_for_event(
+        event.event_type(),
+        None,
+        event.state().unwrap_or_else(gtk::gdk::ModifierType::empty),
+    )
+}
+
 /// One-line, truncated label. `_` is doubled so GTK does not read it as a mnemonic.
 pub fn label(content: &str) -> String {
     let line = content
@@ -173,7 +211,14 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
             state
                 .ignore_until
                 .set(Some(std::time::Instant::now() + crate::SELF_WRITE_WINDOW));
-            if !clipboard_out::set_rich(&cb, formats.clone())
+            let plain_paste = current_event_requests_plain_paste();
+            if plain_paste {
+                if let Some(text) = formats.text.as_deref() {
+                    cb.set_text(text);
+                } else {
+                    clipboard_out::set_rich(&cb, formats.clone());
+                }
+            } else if !clipboard_out::set_rich(&cb, formats.clone())
                 && let Some(text) = formats.text.as_deref()
             {
                 cb.set_text(text);
@@ -194,6 +239,15 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
     // Keypad 1-9 select entries by position. The top-row digits keep working
     // through the mnemonics above (Shift+digit on AZERTY).
     menu.connect_key_press_event(move |menu, event| {
+        let modifiers = event.state();
+        if shift_enter(event.keyval(), modifiers)
+            && let Some(item) = menu.selected_item()
+            && let Ok(item) = item.downcast::<gtk::MenuItem>()
+        {
+            menu.popdown();
+            item.activate();
+            return glib::Propagation::Stop;
+        }
         match keypad_index(event.keyval()).and_then(|i| items.get(i)) {
             Some(item) => {
                 // Activating directly bypasses GTK's own close-on-select path.
@@ -288,6 +342,62 @@ fn popup_when_grabbable(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_paste_is_only_shift_enter_or_shift_click() {
+        use gtk::gdk::keys::constants as k;
+        use gtk::gdk::{EventType, ModifierType};
+        let shift = ModifierType::SHIFT_MASK;
+
+        assert!(plain_paste_for_event(
+            EventType::KeyPress,
+            Some(k::Return),
+            shift
+        ));
+        assert!(plain_paste_for_event(
+            EventType::KeyPress,
+            Some(k::KP_Enter),
+            shift
+        ));
+        assert!(plain_paste_for_event(
+            EventType::KeyPress,
+            Some(k::ISO_Enter),
+            shift
+        ));
+        assert!(plain_paste_for_event(EventType::ButtonRelease, None, shift));
+
+        assert!(shift_enter(k::Return, shift));
+        assert!(shift_enter(k::KP_Enter, shift));
+        assert!(shift_enter(k::ISO_Enter, shift));
+        assert!(!shift_enter(k::Return, ModifierType::empty()));
+        assert!(!shift_enter(k::_2, shift));
+
+        assert!(!plain_paste_for_event(
+            EventType::KeyPress,
+            Some(k::Return),
+            ModifierType::empty()
+        ));
+        assert!(!plain_paste_for_event(
+            EventType::KeyPress,
+            Some(k::_2),
+            shift
+        ));
+        assert!(!plain_paste_for_event(
+            EventType::KeyPress,
+            Some(k::KP_2),
+            shift
+        ));
+        assert!(!plain_paste_for_event(
+            EventType::KeyRelease,
+            Some(k::Return),
+            shift
+        ));
+        assert!(!plain_paste_for_event(
+            EventType::ButtonRelease,
+            None,
+            ModifierType::empty()
+        ));
+    }
 
     #[test]
     fn keypad_digits_map_to_positions() {
