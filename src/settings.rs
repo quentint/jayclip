@@ -138,7 +138,7 @@ fn save_password_setting(
     match state.db.set_do_not_store_passwords(enabled) {
         Ok(()) => state.do_not_store_passwords.set(enabled),
         Err(e) => {
-            eprintln!("balloon: could not save settings: {e}");
+            eprintln!("diodon-next: could not save settings: {e}");
             set_toggle_active(item, state.do_not_store_passwords.get(), suppress_toggle);
         }
     }
