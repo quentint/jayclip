@@ -1,27 +1,32 @@
 # diodon-next: implementation plan
 
-A personal clipboard manager for X11 (Cinnamon). Text only. Stores history in
-SQLite, shows it in a native GTK menu opened by a global shortcut, and pastes
-the chosen entry into the window that had focus.
+A personal clipboard manager for X11 (Cinnamon). Stores history in SQLite,
+shows it in a native GTK menu opened by a global shortcut, and pastes the
+chosen entry into the window that had focus. Plain text today; rich text and
+images are planned (Phase 6).
 
-Not meant to be distributed. Optimise for "works on this machine" and few
+Not distributed for now (a `.deb` may come later, and the project will be
+renamed, see Phase 9). Optimise for "works on this machine" and few
 dependencies.
 
 ## Decisions
 
 | Topic | Choice | Reason |
 |---|---|---|
-| Language | Rust (2021 edition) | User preference |
+| Language | Rust (2024 edition) | User preference |
 | UI / clipboard | `gtk` 0.18 (GTK3 bindings) | Native menu, clipboard `owner-change` signal, themed like Cinnamon |
 | Storage | SQLite via `rusqlite` with the `bundled` feature | Compiles SQLite from C (gcc is already installed), so no `libsqlite3-dev` is needed |
 | Paste / focus | `xdotool` (subprocess) | User preference, simplest |
 | Global shortcut | Cinnamon custom keybinding running `diodon-next show` | No code, no X key grabbing |
 | Process model | Single-instance `gtk::Application` (D-Bus activation) | The `show` invocation activates the daemon, so no custom IPC |
-| Content | Text only | Scope for v1 |
+| Content | Plain text today; rich text (HTML, RTF) and images in Phase 6 | v1 scope was text only |
 | Platform | X11 only | Current session is X11; Wayland would need a different design |
 
 Dependencies in `Cargo.toml`: `gtk`, `rusqlite` (features: `bundled`). Nothing
-else. Timestamps use `std::time`. Argument parsing uses `std::env::args`.
+else, and Phase 6 and 7 add no crates: hashing uses `glib::Checksum`, the one
+`unsafe` clipboard call goes through the `gtk::ffi` re-export, image work uses
+`gdk_pixbuf` (part of GTK). Timestamps use `std::time`. Argument parsing uses
+`std::env::args`.
 
 System packages to install (needs approval): `libgtk-3-dev`, `pkg-config`,
 `xdotool`. Toolchain: `rustup` (stable).
@@ -56,6 +61,9 @@ src/
 ```
 
 ## Database
+
+This section describes the **v1 schema, which is in use today**. Phase 6
+replaces it with a v2 schema (hash-keyed, multi-format, storage budget).
 
 File: `$XDG_DATA_HOME/diodon-next/history.db` (default
 `~/.local/share/diodon-next/history.db`). The directory is created with
@@ -92,6 +100,8 @@ Operations in `db.rs`:
   `used_at`).
 
 Constants: `MAX_ENTRIES = 50`, `MAX_BYTES = 100_000` (larger text is ignored).
+Both become settings in Phase 7, and `MAX_BYTES` disappears in Phase 6: the
+storage budget replaces any per-entry limit.
 
 ## Phase 0: environment setup
 
@@ -211,7 +221,8 @@ Clear history
 
 Details:
 
-1. `menu.rs` labels pinned entries with a `★ ` prefix (`entry_label`). The
+1. `menu.rs` labels pinned entries with a `★ ` prefix (`entry_label`); Phase 6
+   replaces it with the 📌 emoji marker. The
    same helper is used in the submenu so marks stay consistent.
 2. A separator is inserted once, between the last pinned entry and the first
    unpinned one. It is omitted if there are no pinned entries, or none
@@ -234,7 +245,7 @@ and the limit applying to unpinned entries only. The submenu itself is
 checked manually: pin, unpin, and verify order in the database and the
 screenshot of the open menu.
 
-## Phase 4: robustness (current)
+## Phase 4: robustness (done, except the two checks only the user can do)
 
 Status legend: [x] done, [ ] to do.
 
@@ -256,7 +267,8 @@ Status legend: [x] done, [ ] to do.
   main loop (`glib::unix_signal_add_local`); `main` then runs a
   `wal_checkpoint(TRUNCATE)`. Verified: exit code 0, WAL file empty, all rows
   present after reopening.
-- [x] **Oversized text.** Verified (99 999 B stored, 100 000 B stored, 100 001 B ignored, 20 MB ignored with RSS +11 MB and the daemon still responsive). Original checklist: text just under `MAX_BYTES` (100 000) is
+- [x] **Oversized text.** (The 100 000-byte limit tested here is superseded by
+  the Phase 6 storage budget.) Verified (99 999 B stored, 100 000 B stored, 100 001 B ignored, 20 MB ignored with RSS +11 MB and the daemon still responsive). Original checklist: text just under `MAX_BYTES` (100 000) is
   stored, just over is ignored, a multi-megabyte copy does not freeze the
   daemon or grow memory noticeably, and a normal copy still works afterwards.
   Also binary-ish text and labels containing `<`, `&` and `_`.
@@ -328,53 +340,202 @@ Results table (fill in while testing):
    remove its autostart) so there are not two clipboard managers fighting
    for ownership.
 
-## Phase 6: images
+## Phase 6: multi-format entries (rich text and images)
 
-Text-only today; the original Diodon had images on. Needed:
+Entries stop being "a string". An entry holds a plain-text form, optional
+`text/html` and `text/rtf` forms, or a PNG image. Work is split in steps that
+each leave the app working; do them in order.
 
-1. **Schema (migration to `user_version = 2`).** Add `kind TEXT NOT NULL
-   DEFAULT 'text'` and `data BLOB` to `entries`. For images, `content` holds a
-   stable key (hex hash of the PNG bytes) so the existing `UNIQUE(content)`
-   dedupe keeps working, and `data` holds the PNG.
-2. **Capture.** In the watcher, when no text is offered but an image target
-   is (`image/png` via `Clipboard::request_image` / `wait_for_image`), encode
-   to PNG with `gdk_pixbuf` (already part of GTK, no new crate), hash it, and
-   upsert. Cap the stored size (setting, default a few MB) and ignore larger
-   images.
-3. **Menu.** Show a small thumbnail (scaled pixbuf, about 48 px high) with a
-   label like `Image 1920x1080`, using a `gtk::ImageMenuItem`-style layout
-   (box with image and label). Keypad and mnemonic shortcuts apply as for text.
-4. **Paste.** `paste.rs` sets the clipboard with `set_image` (the pixbuf
-   decoded from the blob) before sending the paste keystroke.
-5. **Pruning and size.** Images count toward the same entry cap; add a total
-   size cap for image blobs so the database cannot grow without bound.
-6. **Tests.** Round trip: PNG in, same hash out, dedupe, prune; manual paste
-   into an image-capable app (browser, image editor, chat).
+### Decisions (agreed)
 
-## Phase 7: settings UI and status icon
+- **Identity is a hash.** Two copies are the same entry when the SHA-256 of all
+  their stored formats matches (`glib::Checksum`, no new crate). The same words
+  copied plain and copied formatted are therefore two entries.
+- **Rich is the default paste.** Enter, click, keypad digits and digit
+  mnemonics paste the stored rich form. **Shift+Enter and Shift+click** paste
+  the plain text instead. That "plain mode" exists only for those two
+  gestures: it is deliberately ignored for every shortcut (keypad digits,
+  mnemonics, anything else), and it is **not a setting**.
+- **Markers, in this order before the label:** 📌 pinned, 📸 image, 🤖 rich
+  text. They combine (`📌🤖 text`). They replace the old star.
+- **Storage budget, no per-entry limit.** History is limited by a total size
+  budget (default 200 MB, a guess to adjust) plus the entry count. When the
+  budget is exceeded, the oldest unpinned entries are removed silently. No
+  notification: removal is expected behaviour. The old 100 000-byte text limit
+  goes away.
+- **Rich text toggle** in settings (default on); images toggle too.
 
-Needs a small dedicated UI, not just a config file.
+### 6a. Schema v2, hash identity, storage budget (text only, no visible change except the markers)
+
+```sql
+PRAGMA user_version = 2;
+CREATE TABLE entries (
+  id         INTEGER PRIMARY KEY,
+  hash       TEXT    NOT NULL UNIQUE,  -- SHA-256 hex over all stored formats
+  kind       TEXT    NOT NULL DEFAULT 'text',  -- 'text' | 'image'
+  text       TEXT,                     -- plain text (label source); NULL for images
+  html       BLOB,                     -- text/html bytes, as offered
+  rtf        BLOB,                     -- text/rtf bytes, as offered
+  image      BLOB,                     -- PNG bytes
+  thumb      BLOB,                     -- small PNG for the menu
+  width      INTEGER,
+  height     INTEGER,
+  size       INTEGER NOT NULL,         -- total bytes of all stored formats
+  created_at INTEGER NOT NULL,
+  used_at    INTEGER NOT NULL,         -- strictly increasing, as today
+  pinned     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX entries_used_at ON entries(used_at DESC);
+```
+
+- **Hash input** is unambiguous: for each present format in a fixed order
+  (text, html, rtf, image), feed a one-byte tag, the 8-byte length, then the
+  bytes.
+- **Migration v1 to v2** rebuilds the table inside one transaction (SQLite
+  cannot drop the old `UNIQUE(content)` in place): copy the file to
+  `history.db.v1.bak` first, create the new table, copy rows computing each
+  hash in Rust (SQLite has no SHA-256), keep `pinned` and `used_at`, drop the
+  old table, set `user_version = 2`. Also set
+  `PRAGMA auto_vacuum = INCREMENTAL` and run one `VACUUM`, because a SQLite
+  file never shrinks otherwise.
+- **Budget enforcement** after every insert, in one transaction: first the
+  entry-count limit, then, while `SUM(size)` of unpinned rows exceeds the
+  budget, delete the oldest unpinned row (by `used_at`). Then
+  `PRAGMA incremental_vacuum`. Rules that follow from "no per-entry limit":
+  - the entry just stored is **never** evicted by its own insert, so a single
+    entry bigger than the whole budget is kept and everything older unpinned
+    goes;
+  - pinned entries are never evicted and do not count toward the budget (the
+    user decides how much to pin).
+- **Light listing.** `recent()` must not load blobs. It returns `id`, `kind`,
+  `pinned`, a label source (first part of `text`), flags (`has_html`,
+  `has_rtf`), `width`, `height` and `thumb`. A new `get(id)` loads the full
+  entry only when one is picked.
+- **Self-change check** (`last_set`) compares hashes instead of text. If
+  testing shows that reading our own clipboard write back gives a different
+  hash (encoding or newline changes), fall back to ignoring the next
+  owner-change event(s) within a short window after we set the clipboard.
+- **Password hint** check is unchanged and still runs before anything is read
+  or stored; `last_secret` compares plain text.
+- **Tests:** in-memory SQLite for migration (v1 file in, v2 out, pins and order
+  kept), hash determinism and ambiguity cases, dedupe, budget eviction (oldest
+  first, pinned kept, oversized newest kept), count limit, light `recent()`.
+
+### 6b. Rich text
+
+- **Capture.** After the password-hint check, read plain text and, if the
+  rich setting is on, the whitelisted formats `text/html` and `text/rtf` via
+  `wait_for_contents`/`request_contents`. Ignore every other target (for
+  example `chromium/x-source-url`). Bytes are stored exactly as offered.
+- **What becomes an entry**, in order: plain text present, so a text entry
+  (with html/rtf attached when offered); else an image target present, so an
+  image entry (6c); else only HTML or RTF, so a rich entry whose label is the
+  fixed text `(formatted text)` plus its size. No tag stripping: we never
+  parse HTML.
+- **Paste.** Rich (default): offer `text/html`, `text/rtf` and plain text
+  together. Plain (Shift+Enter, Shift+click only): `set_text`, as today. The
+  bindings do not wrap `gtk_clipboard_set_with_data`, so this needs one
+  `unsafe` call, isolated in a small module (`clip_out.rs`) through
+  `gtk::ffi`. The callback hands out the right bytes per requested target;
+  the clear callback drops the boxed data. It only copies byte buffers.
+- **Security rules** (keep them): never render or parse the HTML (no webview,
+  no sanitiser crate); store only the whitelisted formats; the menu always
+  shows the plain text, so what is visible is never HTML; the 🤖 marker is the
+  cue that Enter pastes more than what the label shows, and Shift+Enter is the
+  way to paste only the visible text. HTML can carry link targets, hidden
+  elements and tracking attributes, so it makes the plaintext database more
+  sensitive; the rich toggle lets the user turn that off.
+- **Tests:** round trip each format through the isolated module (offer, then
+  read back from a second clipboard client), plain vs rich target lists,
+  HTML-only copy, and the unsafe module run under `cargo test` with a real
+  display.
+
+### 6c. Images
+
+- **Capture** only when no plain text is offered. Read `image/png` raw bytes
+  with `wait_for_contents` (no decode and re-encode of large screenshots);
+  fall back to `wait_for_image` and encode PNG with `gdk_pixbuf` when the
+  source offers another format. Hash the PNG bytes.
+- **Off the main thread.** Thumbnail creation (scale to about 48 px high, PNG)
+  and any re-encoding run on a worker (`gio::spawn_blocking`, passing only
+  `Vec<u8>`; `PixbufLoader` objects are created and used inside the worker).
+  The main thread then does the insert. This keeps the daemon answering other
+  applications' clipboard requests while a big image is processed.
+- **Menu.** An image row shows the thumbnail and `📸 Image 1920x1080`, built as
+  a `gtk::MenuItem` containing a box with an image and an accel label (so
+  mnemonics and keypad digits still work).
+- **Paste.** Decode the PNG into a pixbuf and `Clipboard::set_image`. Shift
+  has no effect on images (there is no alternate form).
+- **Tests:** PNG round trip, same image copied twice gives one row, eviction
+  by budget, manual paste into a browser, an image editor and a chat app.
+
+### 6d. Shift+Enter and Shift+click (plain paste)
+
+The menu cannot tell a mouse click from a keystroke in its `activate` signal,
+so decide from the triggering event. One function, `wants_plain(event type,
+keyval, state)`, used by every entry's activate handler:
+
+- true only for a key press of `Return`, `KP_Enter` or `ISO_Enter` with Shift
+  held, or a button release with Shift held;
+- false for everything else, in particular key presses of digits and keypad
+  digits (the AZERTY top row needs Shift to type a digit, so Shift being held
+  there means nothing) and calls made by the keypad handler.
+
+The decision comes from `gtk::current_event()` inside the handler, with the
+keypad handler marking its own activations as non-plain. Unit-test the
+function with the combinations above; verify manually with real Shift+Enter,
+Shift+click and Shift+digit on this AZERTY keyboard.
+
+### Open points for Phase 6
+
+- Confirm in a prototype that `gtk::current_event()` is the key or button
+  event during menu activation (6d).
+- Default budget (200 MB) is a guess; revisit after real use. Pinned entries
+  do not count toward it (decided in 6a), so a user who pins many large images
+  can exceed it on purpose.
+- README: update the usage section when this lands (it still describes the
+  100 000-byte limit and the star).
+
+## Phase 7: settings window in the main menu (no status icon)
+
+A tray icon was considered and dropped: it would need `libxapp` and an FFI
+shim, against the "few dependencies" goal, and the main menu is where the user
+already is. The menu gets two new entries:
+
+```
+...entries...
+-------------------
+Pin / unpin  >
+Pause recording        <- check item
+Settings...
+Clear history
+```
 
 1. **Settings storage.** A `settings` table in the existing SQLite database
-   (key/value), read at startup and on change. No extra file format and no
-   new crate. Defaults apply when a key is missing.
-2. **Settings (initial list).**
-   - Skip password-manager copies (default: on).
-   - History size (default: 50; replaces the constant `MAX_ENTRIES`).
-   - Maximum text size (default 100 000 bytes).
-   - Record images, and the maximum image size (Phase 6).
-3. **Settings window.** A `gtk::Window` with checkboxes and spin buttons,
-   opened from the status icon menu and by `diodon-next settings`. Changes
-   apply immediately in the running daemon.
-4. **Status icon.** A tray icon for the daemon, with a menu: Show history,
-   Settings, Pause recording, Quit. Cinnamon supports the StatusNotifier /
-   XApp protocol, so the plan is to use the XApp status icon through
-   `libxapp` (already installed on Linux Mint) via its GObject introspection
-   bindings or a small FFI shim. The `gtk::StatusIcon` API is deprecated, so
-   it is the fallback only. Decide when starting this phase after checking what
-   the Rust side can call without a new dependency.
-5. **Pause recording.** A toggle that stops the watcher from storing entries
-   (clipboard stays usable); shown in the tray icon state.
+   (key/value), loaded into `State` at startup. Defaults apply when a key is
+   missing. No extra file format, no new crate.
+2. **Settings list.**
+   - Skip password-manager copies (default on).
+   - Record rich text (default on).
+   - Record images (default on).
+   - Maximum number of entries (default 50).
+   - Storage budget in MB (default 200).
+   - A `Quit daemon` button.
+
+   Deliberately **not** a setting: the plain paste behaviour (Shift+Enter /
+   Shift+click), per Phase 6.
+3. **Settings window.** A plain `gtk::Window` with check buttons and spin
+   buttons. Changes apply immediately in the running daemon; lowering the entry
+   count or the budget prunes right away. Opened from the menu item and by
+   `diodon-next settings` (forwarded to the daemon like `show`).
+4. **One-shot mode.** When `show` runs without a daemon, choosing `Settings...`
+   must keep the process alive until the window closes (treat it like a paste
+   in progress for `on_finish`), then exit.
+5. **Pause recording.** A check item in the menu: while on, the watcher stores
+   nothing (the clipboard itself keeps working). State persists in settings.
+6. **Trade-off to document.** With no tray icon there is no visible sign that
+   the daemon runs. The README covers `pgrep`, `diodon-next quit` and the
+   Quit button.
 
 ## Phase 8: README and clean-install documentation (done: `README.md`)
 
@@ -415,10 +576,35 @@ Contents:
 A small `install.sh` that performs steps 2 to 6 is optional; the README must
 stand on its own without it.
 
+## Phase 9: rename
+
+The project will be renamed before any wider use. The name is **not chosen**
+(candidates discussed: Balloon, Pelican, Puffer). A bare "Balloon" collides
+with the Ubuntu `balloon` package (a Go password-hashing tool, same
+`/usr/bin/balloon`) and with crates.io, PyPI and npm names, so use a distinct
+binary and package name (for example `<name>-clipboard`) even if the display
+name stays friendly. Check availability again for the final choice, and look
+at trademark databases (not done).
+
+Places to change:
+
+- `Cargo.toml` package name, and the binary name.
+- The application ID in `src/main.rs` (`dev.quentin.DiodonNext`) and the
+  `usage:` text.
+- The data directory `~/.local/share/diodon-next/`: migrate it to the new
+  name on first start (move, do not orphan the user's history).
+- `~/.config/autostart/diodon-next.desktop` and the Cinnamon shortcut command
+  on this machine, plus `README.md` and this plan.
+- The `DIODON_DEBUG` variable mentioned under Testing.
+
 ## Later / maybe
 
 - File lists (`text/uri-list`).
 - Optional encryption at rest.
+- A `.deb` package (cargo-deb, built in an `ubuntu:24.04` container so the
+  glibc floor is 2.39), an app icon and `.desktop` file, a `LICENSE`, and a
+  first-run command that registers the Cinnamon shortcut. Requires Phase 7
+  first.
 
 ## Testing strategy
 
@@ -427,6 +613,9 @@ stand on its own without it.
 - Manual checklist after each phase, using real apps: Firefox, a text editor,
   gnome-terminal, an Electron app.
 - A debug log to stderr behind the `DIODON_DEBUG` environment variable.
+- For Phase 6: migration tests from a real v1 database copy, and a manual
+  matrix of source apps (browser, spreadsheet, office suite, terminal, image
+  editor) for rich text and images.
 
 ## Known risks
 
@@ -437,4 +626,9 @@ stand on its own without it.
 | Some apps ignore synthetic `Ctrl+V` | Content stays on the clipboard for manual paste |
 | `gtk-rs` 0.18 is maintenance-only | Fine for a personal tool, pin the version |
 | First compile is slow | One-time cost, incremental builds are fast |
-| Secrets stored in plaintext | File permissions, password-manager hint, ignore list |
+| Secrets stored in plaintext | File permissions, password-manager hint (HTML and images widen what is stored; toggles in Phase 7) |
+| Rich paste inserts more than the menu shows | 🤖 marker, plain text always shown, Shift+Enter for plain, never render HTML |
+| Huge copies stall the daemon | Image work on a worker thread; budget eviction in one transaction |
+| `unsafe` clipboard FFI call | Isolated module, byte copying only, round-trip tests |
+| Our own clipboard write read back with a different hash | Hash first, short ignore window as fallback |
+| SQLite file never shrinks | `auto_vacuum = INCREMENTAL` plus `incremental_vacuum` after eviction |
