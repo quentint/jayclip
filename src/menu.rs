@@ -65,6 +65,23 @@ pub fn label(content: &str) -> String {
 }
 
 /// Keypad digit 1-9 to a zero-based entry index.
+fn digit_index(key: gtk::gdk::keys::Key) -> Option<usize> {
+    use gtk::gdk::keys::constants as k;
+    [
+        k::_1,
+        k::_2,
+        k::_3,
+        k::_4,
+        k::_5,
+        k::_6,
+        k::_7,
+        k::_8,
+        k::_9,
+    ]
+    .iter()
+    .position(|digit| *digit == key)
+}
+
 fn keypad_index(key: gtk::gdk::keys::Key) -> Option<usize> {
     use gtk::gdk::keys::constants as k;
     [
@@ -86,32 +103,18 @@ fn pixbuf_from_png(bytes: &[u8]) -> Option<gtk::gdk_pixbuf::Pixbuf> {
     gtk::gdk_pixbuf::Pixbuf::from_read(std::io::Cursor::new(bytes.to_vec())).ok()
 }
 
-fn image_menu_item(entry: &Entry, label: &str) -> gtk::MenuItem {
-    let item = gtk::MenuItem::new();
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    if let Some(bytes) = entry.thumb.as_deref()
-        && let Some(pixbuf) = pixbuf_from_png(bytes)
-    {
-        row.pack_start(&gtk::Image::from_pixbuf(Some(&pixbuf)), false, false, 0);
-    }
-    let accel = gtk::AccelLabel::new(label);
-    accel.set_use_underline(true);
-    accel.set_xalign(0.0);
-    accel.set_accel_widget(Some(&item));
-    row.pack_start(&accel, true, true, 0);
-    item.add(&row);
-    item
-}
-
-fn entry_label(entry: &Entry) -> String {
-    let text = if entry.is_image {
+fn entry_text(entry: &Entry) -> String {
+    if entry.is_image {
         match (entry.width, entry.height) {
             (Some(width), Some(height)) => format!("Image {width}×{height}"),
             _ => "Image".to_string(),
         }
     } else {
         label(&entry.content)
-    };
+    }
+}
+
+fn entry_markers(entry: &Entry) -> String {
     let mut markers = String::new();
     if entry.pinned {
         markers.push('📌');
@@ -119,6 +122,50 @@ fn entry_label(entry: &Entry) -> String {
     if entry.has_rich {
         markers.push('🤖');
     }
+    markers
+}
+
+fn history_menu_item(entry: &Entry, index: usize) -> gtk::MenuItem {
+    let item = gtk::MenuItem::new();
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+
+    let mnemonic = gtk::Label::new(None);
+    mnemonic.set_use_underline(true);
+    mnemonic.set_width_chars(3);
+    mnemonic.set_xalign(0.0);
+    if index < 9 {
+        mnemonic.set_text(&format!("_{}", index + 1));
+        mnemonic.set_mnemonic_widget(Some(&item));
+        item.add_mnemonic_label(&mnemonic);
+    }
+    row.pack_start(&mnemonic, false, false, 0);
+
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    if entry.is_image
+        && let Some(bytes) = entry.thumb.as_deref()
+        && let Some(pixbuf) = pixbuf_from_png(bytes)
+    {
+        content.pack_start(&gtk::Image::from_pixbuf(Some(&pixbuf)), false, false, 0);
+    }
+    let text = gtk::Label::new(Some(&entry_text(entry)));
+    text.set_xalign(0.0);
+    text.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    text.set_max_width_chars(LABEL_CHARS as i32);
+    content.pack_start(&text, true, true, 0);
+    row.pack_start(&content, true, true, 0);
+
+    let markers = gtk::Label::new(Some(&entry_markers(entry)));
+    markers.set_xalign(1.0);
+    markers.set_halign(gtk::Align::End);
+    row.pack_start(&markers, false, false, 0);
+
+    item.add(&row);
+    item
+}
+
+fn entry_label(entry: &Entry) -> String {
+    let text = entry_text(entry);
+    let markers = entry_markers(entry);
     if markers.is_empty() {
         text
     } else {
@@ -210,19 +257,7 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
             menu.append(&gtk::SeparatorMenuItem::new());
             separated = true;
         }
-        let text = entry_label(entry);
-        let label = if i < 9 {
-            format!("_{} {}", i + 1, text)
-        } else {
-            text.replace("__", "_")
-        };
-        let item = if entry.is_image {
-            image_menu_item(entry, &label)
-        } else if i < 9 {
-            gtk::MenuItem::with_mnemonic(&label)
-        } else {
-            gtk::MenuItem::with_label(&label)
-        };
+        let item = history_menu_item(entry, i);
         let entry_id = entry.id;
         let state = state.clone();
         let target = target.clone();
@@ -306,7 +341,10 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
             item.activate();
             return glib::Propagation::Stop;
         }
-        match keypad_index(event.keyval()).and_then(|i| items.get(i)) {
+        match keypad_index(event.keyval())
+            .or_else(|| digit_index(event.keyval()))
+            .and_then(|i| items.get(i))
+        {
             Some(item) => {
                 // Activating directly bypasses GTK's own close-on-select path.
                 menu.popdown();
@@ -464,6 +502,9 @@ mod tests {
         assert_eq!(keypad_index(k::KP_9), Some(8));
         assert_eq!(keypad_index(k::KP_0), None);
         assert_eq!(keypad_index(k::_2), None);
+        assert_eq!(digit_index(k::_1), Some(0));
+        assert_eq!(digit_index(k::_9), Some(8));
+        assert_eq!(digit_index(k::KP_2), None);
         assert_eq!(keypad_index(k::KP_End), None);
     }
 

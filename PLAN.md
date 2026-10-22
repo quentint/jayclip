@@ -210,15 +210,21 @@ pinning lives in a submenu instead of a click modifier.
 Menu layout, top to bottom:
 
 ```
-1 ★ pinned entry        <- pinned block (all pinned entries)
-2 ★ another pinned
--------------------
-3 recent entry          <- newest unpinned, up to MAX_ENTRIES
-4 older entry
--------------------
-Pin / unpin  >          <- submenu, mnemonic _P
+1   ★ pinned entry                                      🤖
+2   another entry with an image thumbnail       Image dimensions
+---
+Pin / unpin  >
+Pause recording
+Settings...
 Clear history
 ```
+
+History rows use three aligned columns: a fixed-width left mnemonic, an
+expanding text/thumbnail column, and right-aligned type markers (📌 pinned,
+🤖 rich text). Image rows show their thumbnail instead of an image emoji.
+The markers occupy a separate column, so text starts at the same position
+whether or not a marker is present. The first nine rows are numbered in display
+order.
 
 Details:
 
