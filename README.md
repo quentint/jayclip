@@ -298,5 +298,3 @@ Run a throwaway copy without touching your real history:
 ```sh
 XDG_DATA_HOME=/tmp/diodon-test ./target/debug/diodon-next daemon
 ```
-
-`PLAN.md` has the design, the roadmap and the testing notes.
