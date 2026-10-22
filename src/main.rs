@@ -26,7 +26,7 @@ pub struct State {
     pub menu_active: std::cell::Cell<bool>,
 }
 
-const APP_ID: &str = "dev.quentin.DiodonNext";
+const APP_ID: &str = "dev.quentin.Jayclip";
 pub const SELF_WRITE_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// GTK warns on every failed menu grab; `menu.rs` retries on purpose while the
@@ -62,21 +62,21 @@ fn main() -> glib::ExitCode {
             let db = match db::Db::open() {
                 Ok(db) => db,
                 Err(e) => {
-                    eprintln!("diodon-next: cannot open database: {e}");
+                    eprintln!("jayclip: cannot open database: {e}");
                     std::process::exit(1);
                 }
             };
             let do_not_store_passwords = match db.do_not_store_passwords() {
                 Ok(enabled) => enabled,
                 Err(e) => {
-                    eprintln!("diodon-next: could not load settings: {e}");
+                    eprintln!("jayclip: could not load settings: {e}");
                     true
                 }
             };
             let recording_paused = match db.recording_paused() {
                 Ok(paused) => paused,
                 Err(e) => {
-                    eprintln!("diodon-next: could not load recording state: {e}");
+                    eprintln!("jayclip: could not load recording state: {e}");
                     false
                 }
             };
@@ -121,7 +121,7 @@ fn main() -> glib::ExitCode {
             }
             Some("quit") => app.quit(),
             _ => {
-                eprintln!("usage: diodon-next <daemon|show|quit>");
+                eprintln!("usage: jayclip <daemon|show|quit>");
                 return 2;
             }
         }

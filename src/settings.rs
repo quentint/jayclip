@@ -19,7 +19,7 @@ pub fn submenu(state: Rc<State>) -> gtk::MenuItem {
     let state = state.clone();
     clear.connect_activate(move |_| {
         if let Err(e) = state.db.clear() {
-            eprintln!("diodon-next: db error: {e}");
+            eprintln!("jayclip: db error: {e}");
         }
     });
     menu.append(&clear);
@@ -83,7 +83,7 @@ fn history_size_submenu(state: Rc<State>) -> gtk::MenuItem {
             if item.is_active()
                 && let Err(e) = state.db.set_display_entries(count)
             {
-                eprintln!("diodon-next: db error setting history size: {e}");
+                eprintln!("jayclip: db error setting history size: {e}");
             }
         });
         menu.append(&item);
@@ -110,7 +110,7 @@ fn recording_toggle(state: Rc<State>) -> gtk::CheckMenuItem {
                     .set(state.recording_generation.get().wrapping_add(1));
             }
             Err(e) => {
-                eprintln!("diodon-next: could not save recording state: {e}");
+                eprintln!("jayclip: could not save recording state: {e}");
                 set_toggle_active(item, state.recording_paused.get(), &suppress_toggle);
             }
         }
@@ -138,7 +138,7 @@ fn save_password_setting(
     match state.db.set_do_not_store_passwords(enabled) {
         Ok(()) => state.do_not_store_passwords.set(enabled),
         Err(e) => {
-            eprintln!("diodon-next: could not save settings: {e}");
+            eprintln!("jayclip: could not save settings: {e}");
             set_toggle_active(item, state.do_not_store_passwords.get(), suppress_toggle);
         }
     }

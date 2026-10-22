@@ -77,14 +77,14 @@ pub async fn send_paste(target: Option<Target>) {
         let combo = match &target {
             Some(t) => {
                 if xdotool(&["windowactivate", "--sync", &t.window]).is_none() {
-                    eprintln!("diodon-next: could not refocus window {}", t.window);
+                    eprintln!("jayclip: could not refocus window {}", t.window);
                 }
                 paste_combo(&t.class)
             }
             None => "ctrl+v",
         };
         if xdotool(&["key", "--clearmodifiers", combo]).is_none() {
-            eprintln!("diodon-next: xdotool key failed; content is on the clipboard");
+            eprintln!("jayclip: xdotool key failed; content is on the clipboard");
         }
     })
     .await;

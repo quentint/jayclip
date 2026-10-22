@@ -1,4 +1,4 @@
-# diodon-next
+# jayclip
 
 A small personal clipboard manager for Linux Mint (Cinnamon) on **X11**,
 inspired by [Diodon](https://github.com/diodon-dev/diodon).
@@ -81,12 +81,12 @@ New terminals pick up `~/.cargo/bin` automatically; the installer adds it to
 ### 3. Build and install the program
 
 ```sh
-git clone <this repository> diodon-next
-cd diodon-next
+git clone <this repository> jayclip
+cd jayclip
 cargo install --path . --locked
 ```
 
-This places the binary at `~/.cargo/bin/diodon-next`. The commands below use the
+This places the binary at `~/.cargo/bin/jayclip`. The commands below use the
 full path on purpose, because desktop sessions do not always have that directory
 on `PATH`.
 
@@ -97,12 +97,12 @@ start automatically:
 
 ```sh
 mkdir -p ~/.config/autostart
-cat > ~/.config/autostart/diodon-next.desktop <<EOF
+cat > ~/.config/autostart/jayclip.desktop <<EOF
 [Desktop Entry]
 Type=Application
-Name=diodon-next
+Name=jayclip
 Comment=Personal clipboard manager
-Exec=$HOME/.cargo/bin/diodon-next daemon
+Exec=$HOME/.cargo/bin/jayclip daemon
 Terminal=false
 X-GNOME-Autostart-enabled=true
 EOF
@@ -111,29 +111,29 @@ EOF
 To start it right now, without logging out and back in:
 
 ```sh
-setsid ~/.cargo/bin/diodon-next daemon >/dev/null 2>&1 &
+setsid ~/.cargo/bin/jayclip daemon >/dev/null 2>&1 &
 ```
 
 > **Tip:** if new copies stop showing up, the daemon has probably stopped. Check
-> with `pgrep -ax diodon-next`; if it is gone, run the command above again.
+> with `pgrep -ax jayclip`; if it is gone, run the command above again.
 > Copies are only recorded while the daemon is running.
 
 ### 5. Add the global shortcut
 
-The shortcut simply runs `diodon-next show` to open the menu. Set it up either
+The shortcut simply runs `jayclip show` to open the menu. Set it up either
 way:
 
 **Using the GUI (easiest):** open *Menu → Preferences → Keyboard → Shortcuts →
 Custom Shortcuts*, click *Add custom shortcut*, then fill in:
 
-- **Name:** `diodon-next`
-- **Command:** `/home/<you>/.cargo/bin/diodon-next show` (use your real home path)
+- **Name:** `jayclip`
+- **Command:** `/home/<you>/.cargo/bin/jayclip show` (use your real home path)
 - Click the binding column and press the keys you want, for example `Super+V`.
 
 **Using the terminal (does the same thing):**
 
 ```sh
-BIN="$HOME/.cargo/bin/diodon-next"
+BIN="$HOME/.cargo/bin/jayclip"
 KB=org.cinnamon.desktop.keybindings
 CURRENT=$(gsettings get $KB custom-list)
 
@@ -142,7 +142,7 @@ N=0; while echo "$CURRENT" | grep -q "'custom$N'"; do N=$((N+1)); done
 ID=custom$N
 K=$KB.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/$ID/
 
-gsettings set $K name "diodon-next"
+gsettings set $K name "jayclip"
 gsettings set $K command "$BIN show"
 gsettings set $K binding "['<Super>v']"
 
@@ -200,7 +200,7 @@ history menu opens at the mouse pointer.
 
 ### How pasting works
 
-When you pick an entry, diodon-next copies it to the clipboard, brings your
+When you pick an entry, jayclip copies it to the clipboard, brings your
 previous window back to the front, and sends the paste keystroke for you:
 Ctrl+V normally, or Ctrl+Shift+V in terminals (gnome-terminal, kitty,
 alacritty, xterm, tilix, konsole, and similar).
@@ -254,9 +254,9 @@ You normally never run these by hand — autostart and the shortcut do it — bu
 they are available:
 
 ```sh
-diodon-next daemon   # run the background process (autostart does this)
-diodon-next show     # open the menu (the shortcut does this)
-diodon-next quit     # stop the daemon (there is no Quit menu item)
+jayclip daemon   # run the background process (autostart does this)
+jayclip show     # open the menu (the shortcut does this)
+jayclip quit     # stop the daemon (there is no Quit menu item)
 ```
 
 If you run `show` while no daemon is running, the menu opens once and exits
@@ -267,7 +267,7 @@ afterwards, and nothing is recorded during that time.
 Your history is a single SQLite database:
 
 ```
-~/.local/share/diodon-next/history.db
+~/.local/share/jayclip/history.db
 ```
 
 It runs in WAL mode, so you will also see `-wal` and `-shm` files while the
@@ -279,7 +279,7 @@ To peek at what is stored (Python 3 ships with Linux Mint):
 ```sh
 python3 - <<'PY'
 import sqlite3, os
-db = sqlite3.connect(os.path.expanduser('~/.local/share/diodon-next/history.db'))
+db = sqlite3.connect(os.path.expanduser('~/.local/share/jayclip/history.db'))
 for pinned, text in db.execute('select pinned, substr(coalesce(text, \'\'), 1, 60) from entries order by pinned desc, used_at desc'):
     print(pinned, repr(text))
 PY
@@ -288,28 +288,28 @@ PY
 ## Update
 
 ```sh
-cd diodon-next && git pull
+cd jayclip && git pull
 cargo install --path . --locked
-~/.cargo/bin/diodon-next quit; setsid ~/.cargo/bin/diodon-next daemon >/dev/null 2>&1 &
+~/.cargo/bin/jayclip quit; setsid ~/.cargo/bin/jayclip daemon >/dev/null 2>&1 &
 ```
 
 ## Uninstall
 
 ```sh
-~/.cargo/bin/diodon-next quit
-cargo uninstall diodon-next
-rm ~/.config/autostart/diodon-next.desktop
-rm -r ~/.local/share/diodon-next        # deletes your history
+~/.cargo/bin/jayclip quit
+cargo uninstall jayclip
+rm ~/.config/autostart/jayclip.desktop
+rm -r ~/.local/share/jayclip        # deletes your history
 ```
 
-Then remove the `diodon-next` entry under *Keyboard → Shortcuts → Custom
+Then remove the `jayclip` entry under *Keyboard → Shortcuts → Custom
 Shortcuts*.
 
 ## Troubleshooting
 
 **The shortcut does nothing.**
-Check the daemon is running (`pgrep -ax diodon-next`) and that the menu opens
-when run directly (`~/.cargo/bin/diodon-next show`). If that works but the
+Check the daemon is running (`pgrep -ax jayclip`) and that the menu opens
+when run directly (`~/.cargo/bin/jayclip show`). If that works but the
 shortcut does not, the shortcut's command is wrong or Cinnamon did not reload
 it — re-apply it as in step 5. Another program may also own the same key
 combination.
@@ -347,5 +347,5 @@ cargo clippy
 Run a throwaway copy without touching your real history:
 
 ```sh
-XDG_DATA_HOME=/tmp/diodon-test ./target/debug/diodon-next daemon
+XDG_DATA_HOME=/tmp/jayclip-test ./target/debug/jayclip daemon
 ```

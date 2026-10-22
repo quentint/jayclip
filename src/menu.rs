@@ -22,7 +22,7 @@ fn pin_submenu(state: &Rc<State>, entries: &[crate::db::Entry]) -> gtk::MenuItem
         let (state, id) = (state.clone(), entry.id);
         item.connect_activate(move |_| {
             if let Err(e) = state.db.toggle_pin(id) {
-                eprintln!("diodon-next: db error: {e}");
+                eprintln!("jayclip: db error: {e}");
             }
         });
         sub.append(&item);
@@ -149,16 +149,16 @@ fn connect_paste_item(
         let formats = match state.db.get_formats(entry_id) {
             Ok(Some(formats)) => formats,
             Ok(None) => {
-                eprintln!("diodon-next: entry not found: {entry_id}");
+                eprintln!("jayclip: entry not found: {entry_id}");
                 return;
             }
             Err(e) => {
-                eprintln!("diodon-next: db error: {e}");
+                eprintln!("jayclip: db error: {e}");
                 return;
             }
         };
         if let Err(e) = state.db.touch(entry_id) {
-            eprintln!("diodon-next: db error: {e}");
+            eprintln!("jayclip: db error: {e}");
         }
         let cb = watcher::clipboard();
         let plain_paste = input::current_event_requests_plain_paste();
@@ -182,8 +182,8 @@ fn connect_paste_item(
                         watcher::clipboard().set_image(&pixbuf);
                         paste::send_paste(target).await;
                     }
-                    Ok(None) => eprintln!("diodon-next: could not decode stored image"),
-                    Err(e) => eprintln!("diodon-next: image decode task failed: {e:?}"),
+                    Ok(None) => eprintln!("jayclip: could not decode stored image"),
+                    Err(e) => eprintln!("jayclip: image decode task failed: {e:?}"),
                 }
                 glib::timeout_future(GRACE).await;
                 on_finish();

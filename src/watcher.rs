@@ -170,7 +170,7 @@ fn capture_image(
         }
         let formats = formats_from_image(encoded);
         if let Err(e) = state.db.upsert_formats(&formats) {
-            eprintln!("diodon-next: db error: {e}");
+            eprintln!("jayclip: db error: {e}");
         }
     });
 }
@@ -214,7 +214,7 @@ fn finish_record(
     }
     state.last_secret.borrow_mut().take();
     if let Err(e) = state.db.upsert_formats(&formats) {
-        eprintln!("diodon-next: db error: {e}");
+        eprintln!("jayclip: db error: {e}");
     }
 }
 

@@ -48,7 +48,7 @@ fn popup_when_grabbable(
         }
         menu.popdown();
         if attempt + 1 >= MAX_ATTEMPTS {
-            eprintln!("diodon-next: could not grab the keyboard for the menu");
+            eprintln!("jayclip: could not grab the keyboard for the menu");
             helper.close();
             on_finish();
             return;

@@ -78,7 +78,7 @@ fn db_path() -> PathBuf {
         .filter(|p| p.is_absolute())
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
         .expect("neither XDG_DATA_HOME nor HOME is set");
-    base.join("diodon-next").join("history.db")
+    base.join("jayclip").join("history.db")
 }
 
 impl Db {
@@ -332,7 +332,7 @@ impl Db {
                     Ok((r.get(0)?, r.get(1)?, r.get(2)?))
                 });
         if let Err(e) = r {
-            eprintln!("diodon-next: checkpoint failed: {e}");
+            eprintln!("jayclip: checkpoint failed: {e}");
         }
     }
 
