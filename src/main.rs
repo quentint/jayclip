@@ -14,6 +14,8 @@ pub struct State {
     pub db: db::Db,
     /// Ignore clipboard owner-change events briefly after our own clipboard write.
     pub ignore_until: std::cell::Cell<Option<std::time::Instant>>,
+    /// Changes whenever we write our own clipboard content, invalidating pending reads.
+    pub clipboard_write_generation: std::cell::Cell<u64>,
     /// Text of the last copy skipped for carrying the password-manager hint.
     pub last_secret: RefCell<Option<String>>,
     /// True from `show` until its interaction ends; blocks overlapping menus.
@@ -63,6 +65,7 @@ fn main() -> glib::ExitCode {
             let st = Rc::new(State {
                 db,
                 ignore_until: std::cell::Cell::new(None),
+                clipboard_write_generation: std::cell::Cell::new(0),
                 last_secret: RefCell::new(None),
                 menu_active: std::cell::Cell::new(false),
             });

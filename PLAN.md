@@ -221,10 +221,15 @@ Clear history
 
 History rows use three aligned columns: a fixed-width left mnemonic, an
 expanding text/thumbnail column, and right-aligned type markers (📌 pinned,
-🤖 rich text). Image rows show their thumbnail instead of an image emoji.
+🤖 rich text). Images use their thumbnail preview instead of an emoji marker.
 The markers occupy a separate column, so text starts at the same position
 whether or not a marker is present. The first nine rows are numbered in display
-order.
+order; GTK's mnemonic-aware label setter underlines the digit without showing a
+literal underscore. A regression test verifies the label text and mnemonic keyval.
+Shift+click writes plain text to the clipboard, so the watcher invalidates any
+in-flight capture when the app writes. This prevents the plain-only read-back
+from becoming a duplicate plain history entry. Verified with an X11 test:
+Shift-click leaves the single rich entry intact.
 
 Details:
 

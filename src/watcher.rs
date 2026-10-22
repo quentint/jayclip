@@ -26,6 +26,7 @@ pub fn start(state: Rc<State>) {
         if is_own_write_ignored(state.ignore_until.get(), Instant::now()) {
             return None;
         }
+        let write_generation = state.clipboard_write_generation.get();
         if cb.wait_is_target_available(&gtk::gdk::Atom::intern(PASSWORD_HINT)) {
             *state.last_secret.borrow_mut() = cb.wait_for_text().map(|t| t.to_string());
             return None;
@@ -48,15 +49,15 @@ pub fn start(state: Rc<State>) {
                     text: Some(text.to_string()),
                     ..Formats::default()
                 }));
-                request_rich_formats(cb.clone(), targets, 0, formats, state);
+                request_rich_formats(cb.clone(), targets, 0, formats, state, write_generation);
                 return;
             }
             if !targets.is_empty() {
                 let formats = Rc::new(RefCell::new(Formats::default()));
-                request_rich_formats(cb.clone(), targets, 0, formats, state);
+                request_rich_formats(cb.clone(), targets, 0, formats, state, write_generation);
                 return;
             }
-            request_png_image(cb.clone(), state);
+            request_png_image(cb.clone(), state, write_generation);
         });
         None
     });
@@ -68,15 +69,16 @@ fn request_rich_formats(
     index: usize,
     formats: Rc<RefCell<Formats>>,
     state: Rc<State>,
+    write_generation: u64,
 ) {
     let Some(target) = targets.get(index).cloned() else {
         let captured = formats.borrow();
         if captured.text.is_none() && captured.html.is_none() && captured.rtf.is_none() {
             drop(captured);
-            request_png_image(cb, state);
+            request_png_image(cb, state, write_generation);
         } else {
             drop(captured);
-            finish_record(&state, formats);
+            finish_record(&state, formats, write_generation);
         }
         return;
     };
@@ -91,30 +93,38 @@ fn request_rich_formats(
                 formats.rtf = Some(bytes);
             }
         }
-        request_rich_formats(cb.clone(), targets, index + 1, formats, state);
+        request_rich_formats(
+            cb.clone(),
+            targets,
+            index + 1,
+            formats,
+            state,
+            write_generation,
+        );
     });
 }
 
-fn request_png_image(clipboard: gtk::Clipboard, state: Rc<State>) {
+fn request_png_image(clipboard: gtk::Clipboard, state: Rc<State>, write_generation: u64) {
     clipboard.request_image(move |_, pixbuf| {
         let Some(pixbuf) = pixbuf else {
             return;
         };
-        capture_image(image_support::copy_pixels(pixbuf), state);
+        capture_image(image_support::copy_pixels(pixbuf), state, write_generation);
     });
 }
 
-fn capture_image(pixels: image_support::Pixels, state: Rc<State>) {
+fn capture_image(pixels: image_support::Pixels, state: Rc<State>, write_generation: u64) {
     glib::MainContext::default().spawn_local(async move {
         let Ok(Some(encoded)) =
             gtk::gio::spawn_blocking(move || image_support::encode_pixels(pixels)).await
         else {
             return;
         };
-        if state
-            .ignore_until
-            .get()
-            .is_some_and(|deadline| Instant::now() < deadline)
+        if state.clipboard_write_generation.get() != write_generation
+            || state
+                .ignore_until
+                .get()
+                .is_some_and(|deadline| Instant::now() < deadline)
         {
             return;
         }
@@ -135,8 +145,10 @@ fn formats_from_image(encoded: EncodedImage) -> Formats {
     }
 }
 
-fn finish_record(state: &State, formats: Rc<RefCell<Formats>>) {
-    if is_own_write_ignored(state.ignore_until.get(), Instant::now()) {
+fn finish_record(state: &State, formats: Rc<RefCell<Formats>>, write_generation: u64) {
+    if state.clipboard_write_generation.get() != write_generation
+        || is_own_write_ignored(state.ignore_until.get(), Instant::now())
+    {
         return;
     }
     let formats = formats.borrow().clone();
@@ -166,6 +178,16 @@ fn finish_record(state: &State, formats: Rc<RefCell<Formats>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn should_record(captured_generation: u64, current_generation: u64) -> bool {
+        captured_generation == current_generation
+    }
+
+    #[test]
+    fn own_clipboard_write_invalidates_inflight_capture() {
+        assert!(should_record(4, 4));
+        assert!(!should_record(4, 5));
+    }
 
     #[test]
     fn own_write_window_ignores_only_events_before_deadline() {

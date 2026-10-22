@@ -134,7 +134,7 @@ fn history_menu_item(entry: &Entry, index: usize) -> gtk::MenuItem {
     mnemonic.set_width_chars(3);
     mnemonic.set_xalign(0.0);
     if index < 9 {
-        mnemonic.set_text(&format!("_{}", index + 1));
+        mnemonic.set_text_with_mnemonic(&format!("_{}", index + 1));
         mnemonic.set_mnemonic_widget(Some(&item));
         item.add_mnemonic_label(&mnemonic);
     }
@@ -307,6 +307,12 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
             }
             if plain_paste {
                 if let Some(text) = formats.text.as_deref() {
+                    state
+                        .clipboard_write_generation
+                        .set(state.clipboard_write_generation.get().wrapping_add(1));
+                    state
+                        .ignore_until
+                        .set(Some(std::time::Instant::now() + crate::SELF_WRITE_WINDOW));
                     cb.set_text(text);
                 } else {
                     clipboard_out::set_rich(&cb, formats.clone());
