@@ -8,7 +8,7 @@ shortcut and a menu pops up right where your mouse is; pick an entry and it is
 pasted straight into whatever window you were using.
 
 **What it handles:** plain text, rich text (HTML and RTF), and images (PNG).
-Passwords are skipped by default. Rich-text entries paste with their formatting
+Passwords are not skipped by default. Rich-text entries paste with their formatting
 intact, but you can paste them as plain text when you want to.
 
 > This is a personal tool, not a distributable product. It is written in Rust
@@ -240,8 +240,8 @@ selection.
 
 ### Passwords
 
-**Do not store passwords** is on by default. It skips a copy only when the
-source advertises the `x-kde-passwordManagerHint` clipboard hint.
+**Do not store passwords** is off by default. When enabled, it skips a copy
+only when the source advertises the `x-kde-passwordManagerHint` clipboard hint.
 
 > **Caveat:** some password managers and desktop clipboard services do not
 > preserve this X11 hint, so protection is best-effort. Keep your password

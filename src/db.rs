@@ -146,7 +146,7 @@ impl Db {
                 |row| row.get(0),
             )
             .optional()?;
-        Ok(value.unwrap_or(1) != 0)
+        Ok(value.unwrap_or(0) != 0)
     }
 
     pub fn set_do_not_store_passwords(&self, enabled: bool) -> rusqlite::Result<()> {
@@ -432,13 +432,13 @@ mod tests {
     }
 
     #[test]
-    fn password_recording_setting_defaults_on_and_persists_changes() {
+    fn password_recording_setting_defaults_off_and_persists_changes() {
         let db = Db::open_in_memory().unwrap();
-        assert!(db.do_not_store_passwords().unwrap());
-        db.set_do_not_store_passwords(false).unwrap();
         assert!(!db.do_not_store_passwords().unwrap());
         db.set_do_not_store_passwords(true).unwrap();
         assert!(db.do_not_store_passwords().unwrap());
+        db.set_do_not_store_passwords(false).unwrap();
+        assert!(!db.do_not_store_passwords().unwrap());
     }
 
     #[test]

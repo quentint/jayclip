@@ -70,7 +70,7 @@ fn main() -> glib::ExitCode {
                 Ok(enabled) => enabled,
                 Err(e) => {
                     eprintln!("jayclip: could not load settings: {e}");
-                    true
+                    false
                 }
             };
             let recording_paused = match db.recording_paused() {
