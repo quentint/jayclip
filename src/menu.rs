@@ -163,23 +163,32 @@ fn history_menu_item(entry: &Entry, index: usize) -> gtk::MenuItem {
     item
 }
 
-fn entry_label(entry: &Entry) -> String {
-    let text = entry_text(entry);
-    let markers = entry_markers(entry);
-    if markers.is_empty() {
-        text
-    } else {
-        format!("{markers} {text}")
-    }
-}
-
 /// "Pin / unpin" submenu: every entry is listed, pinned ones are marked;
 /// choosing one toggles its pin and does not paste anything.
 fn pin_submenu(state: &Rc<State>, entries: &[Entry]) -> gtk::MenuItem {
     let parent = gtk::MenuItem::with_mnemonic("_Pin / unpin");
     let sub = gtk::Menu::new();
     for entry in entries {
-        let item = gtk::MenuItem::with_label(&entry_label(entry).replace("__", "_"));
+        let item = gtk::MenuItem::new();
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        let content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        if entry.is_image
+            && let Some(bytes) = entry.thumb.as_deref()
+            && let Some(pixbuf) = pixbuf_from_png(bytes)
+        {
+            content.pack_start(&gtk::Image::from_pixbuf(Some(&pixbuf)), false, false, 0);
+        }
+        let text = gtk::Label::new(Some(&entry_text(entry)));
+        text.set_xalign(0.0);
+        text.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        text.set_max_width_chars(LABEL_CHARS as i32);
+        content.pack_start(&text, true, true, 0);
+        row.pack_start(&content, true, true, 0);
+        let markers = gtk::Label::new(Some(&entry_markers(entry)));
+        markers.set_xalign(1.0);
+        markers.set_halign(gtk::Align::End);
+        row.pack_start(&markers, false, false, 0);
+        item.add(&row);
         let (state, id) = (state.clone(), entry.id);
         item.connect_activate(move |_| {
             if let Err(e) = state.db.toggle_pin(id) {
