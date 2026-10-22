@@ -14,6 +14,8 @@ use std::rc::Rc;
 pub struct State {
     pub db: db::Db,
     pub do_not_store_passwords: std::cell::Cell<bool>,
+    pub recording_paused: std::cell::Cell<bool>,
+    pub recording_generation: std::cell::Cell<u64>,
     /// Ignore clipboard owner-change events briefly after our own clipboard write.
     pub ignore_until: std::cell::Cell<Option<std::time::Instant>>,
     /// Changes whenever we write our own clipboard content, invalidating pending reads.
@@ -71,9 +73,18 @@ fn main() -> glib::ExitCode {
                     true
                 }
             };
+            let recording_paused = match db.recording_paused() {
+                Ok(paused) => paused,
+                Err(e) => {
+                    eprintln!("diodon-next: could not load recording state: {e}");
+                    false
+                }
+            };
             let st = Rc::new(State {
                 db,
                 do_not_store_passwords: std::cell::Cell::new(do_not_store_passwords),
+                recording_paused: std::cell::Cell::new(recording_paused),
+                recording_generation: std::cell::Cell::new(0),
                 ignore_until: std::cell::Cell::new(None),
                 clipboard_write_generation: std::cell::Cell::new(0),
                 last_secret: RefCell::new(None),

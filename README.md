@@ -170,7 +170,6 @@ Copy things as usual. Press your shortcut: a menu opens at the pointer.
 | Keypad `1`-`9` | Paste the entry at that position (Num Lock on) |
 | Top-row digits `1`-`9` | Paste the entry at that position. On an AZERTY keyboard this needs Shift (Shift+2 selects entry 2) |
 | `P` | Open the *Pin / unpin* submenu |
-| `C` | Clear history (pinned entries are kept) |
 | Escape | Close the menu |
 
 Details:
@@ -190,6 +189,10 @@ Details:
 - The history retains up to 100 unpinned entries, within a fixed 200 MB storage
   budget. There is no per-entry size limit; when either hard limit is reached,
   the oldest unpinned entries are removed.
+- In Settings, **[ ] Pause recording** is unchecked while recording is active;
+  check it to pause adding entries to history without affecting clipboard use.
+  The label never changes, and the choice persists across daemon restarts.
+  **Clear history** removes unpinned entries and keeps pinned ones.
 - Settings → History size selects how many recent entries the menu displays
   (5, 10, 20, 50 or 100; default 20). Changing this only changes the displayed count; it
   does not delete entries. Pinned entries remain visible above the recent list.
@@ -209,7 +212,7 @@ Commands:
 ```sh
 diodon-next daemon   # run the background process (autostart does this)
 diodon-next show     # open the menu (the shortcut does this)
-diodon-next quit     # stop the daemon
+diodon-next quit     # stop the daemon (no Quit menu item)
 ```
 
 If `show` is run while no daemon is running, it starts the menu once and exits

@@ -562,7 +562,8 @@ Settings  >
   Do not store passwords   <- check item
   History size             >
     5 / 10 / 20 / 50 / 100 <- radio choices; current choice checked
-Clear history
+  [ ] Pause recording      <- fixed-label checkbox; checked means paused
+  Clear history
 ```
 
 1. **Settings storage.** The SQLite `settings` table stores preferences;
@@ -579,15 +580,22 @@ Clear history
    pinned entries are exempt.
 4. **Storage budget.** Fixed at 200 MB; deliberately not a user setting.
    Budget eviction continues to remove oldest unpinned entries when needed.
-5. **Other future controls.** Record-rich-text and record-images toggles,
-   pause recording, and quit daemon remain planned. Plain-paste gestures remain
-   deliberately not configurable.
-6. **No one-shot settings window.** The submenu stays within the history menu,
+5. **Pause recording (implemented).** The Settings submenu has a fixed-label
+   `Pause recording` checkbox; checked means paused and unchecked means
+   recording. It pauses capture without disabling the clipboard. The setting
+   persists, and in-flight async captures are invalidated across a pause/resume
+   transition. Rich text and images remain always enabled; they are not user
+   settings. Plain-paste gestures remain deliberately not configurable.
+6. **Clear history (moved).** It is inside Settings and continues to retain
+   pinned entries. Verified in the live menu during manual use.
+7. **Other future controls.** Quit daemon remains a command-line action only;
+   there is no Quit menu entry.
+8. **No one-shot settings window.** The submenu stays within the history menu,
    so there is no separate window lifecycle to keep alive in one-shot mode.
-7. **Trade-off to document.** With no tray icon there is no visible sign that
+9. **Trade-off to document.** With no tray icon there is no visible sign that
    the daemon runs; document `pgrep` and `diodon-next quit` in the README.
-8. **Tests.** Database tests verify each visible count leaves retained entries
-   intact and rejects values outside 5, 10, 20, 50 and 100.
+10. **Tests.** Database tests verify each visible count leaves retained entries
+    intact and rejects values outside 5, 10, 20, 50 and 100.
 
 ## Phase 8: README and clean-install documentation (done: `README.md`)
 

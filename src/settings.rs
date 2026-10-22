@@ -12,7 +12,17 @@ pub fn submenu(state: Rc<State>) -> gtk::MenuItem {
     let parent = gtk::MenuItem::with_mnemonic("_Settings");
     let menu = gtk::Menu::new();
     menu.append(&password_toggle(state.clone()));
-    menu.append(&history_size_submenu(state));
+    menu.append(&history_size_submenu(state.clone()));
+    menu.append(&recording_toggle(state.clone()));
+    menu.append(&gtk::SeparatorMenuItem::new());
+    let clear = gtk::MenuItem::with_mnemonic("_Clear history");
+    let state = state.clone();
+    clear.connect_activate(move |_| {
+        if let Err(e) = state.db.clear() {
+            eprintln!("diodon-next: db error: {e}");
+        }
+    });
+    menu.append(&clear);
     parent.set_submenu(Some(&menu));
     parent
 }
@@ -73,13 +83,39 @@ fn history_size_submenu(state: Rc<State>) -> gtk::MenuItem {
             if item.is_active()
                 && let Err(e) = state.db.set_display_entries(count)
             {
-                eprintln!("balloon: could not save history size: {e}");
+                eprintln!("diodon-next: db error setting history size: {e}");
             }
         });
         menu.append(&item);
     }
     parent.set_submenu(Some(&menu));
     parent
+}
+
+fn recording_toggle(state: Rc<State>) -> gtk::CheckMenuItem {
+    let item = gtk::CheckMenuItem::with_label("Pause recording");
+    item.set_active(state.recording_paused.get());
+    let suppress_toggle = Rc::new(std::cell::Cell::new(false));
+    let suppress_for_handler = suppress_toggle.clone();
+    item.connect_toggled(move |item| {
+        if suppress_for_handler.replace(false) {
+            return;
+        }
+        let paused = item.is_active();
+        match state.db.set_recording_paused(paused) {
+            Ok(()) => {
+                state.recording_paused.set(paused);
+                state
+                    .recording_generation
+                    .set(state.recording_generation.get().wrapping_add(1));
+            }
+            Err(e) => {
+                eprintln!("diodon-next: could not save recording state: {e}");
+                set_toggle_active(item, state.recording_paused.get(), &suppress_toggle);
+            }
+        }
+    });
+    item
 }
 
 fn set_toggle_active(

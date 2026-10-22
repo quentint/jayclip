@@ -158,6 +158,27 @@ impl Db {
         Ok(())
     }
 
+    pub fn recording_paused(&self) -> rusqlite::Result<bool> {
+        let value: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'recording_paused'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    pub fn set_recording_paused(&self, paused: bool) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('recording_paused', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [i64::from(paused)],
+        )?;
+        Ok(())
+    }
+
     pub fn display_entries(&self) -> rusqlite::Result<usize> {
         let value: Option<i64> = self
             .conn
@@ -418,6 +439,16 @@ mod tests {
         assert!(!db.do_not_store_passwords().unwrap());
         db.set_do_not_store_passwords(true).unwrap();
         assert!(db.do_not_store_passwords().unwrap());
+    }
+
+    #[test]
+    fn recording_pause_defaults_off_and_persists() {
+        let db = Db::open_in_memory().unwrap();
+        assert!(!db.recording_paused().unwrap());
+        db.set_recording_paused(true).unwrap();
+        assert!(db.recording_paused().unwrap());
+        db.set_recording_paused(false).unwrap();
+        assert!(!db.recording_paused().unwrap());
     }
 
     #[test]

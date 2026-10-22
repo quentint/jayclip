@@ -130,17 +130,7 @@ pub fn show(state: Rc<State>, on_finish: Rc<dyn Fn()>) {
         menu.append(&gtk::SeparatorMenuItem::new());
         menu.append(&pin_submenu(&state, &entries));
     }
-    let clear = gtk::MenuItem::with_mnemonic("_Clear history");
-    {
-        let state = state.clone();
-        clear.connect_activate(move |_| {
-            if let Err(e) = state.db.clear() {
-                eprintln!("diodon-next: db error: {e}");
-            }
-        });
-    }
     menu.append(&settings::submenu(state.clone()));
-    menu.append(&clear);
     menu.show_all();
     popup::popup(menu, helper, on_hide, on_finish);
 }
