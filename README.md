@@ -1,7 +1,7 @@
 # jayclip
 
-A small personal clipboard manager for Linux Mint (Cinnamon) on **X11**,
-inspired by [Diodon](https://github.com/diodon-dev/diodon).
+A native GTK 3 clipboard manager for Unix-like desktop systems on X11, inspired by
+[Diodon](https://github.com/diodon-dev/diodon).
 
 Everything you copy is saved to a private, on-disk history. Press a global
 shortcut and a menu pops up right where your mouse is; pick an entry and it is
@@ -11,8 +11,10 @@ pasted straight into whatever window you were using.
 Passwords are not skipped by default. Rich-text entries paste with their formatting
 intact, but you can paste them as plain text when you want to.
 
-> This is a personal tool, not a distributable product. It is written in Rust
-> with GTK 3 and works only on X11 — Wayland sessions are not supported.
+> jayclip is written in Rust with GTK 3. Its UI and clipboard integration may
+> work in other GTK desktop sessions, but automatic target-window detection and
+> paste use `xdotool` and `xprop` and therefore require X11. Wayland-only
+> sessions do not support that automatic paste workflow.
 
 ## At a glance
 
@@ -30,13 +32,24 @@ Once installed and running, you:
 
 ## Requirements
 
-- Linux Mint 22.x (Cinnamon) running on **X11**. Tested on Mint 22.3; the build
-  was also verified from scratch on a stock Ubuntu 24.04 container.
-- A user account with `sudo`, for the one-time package install.
-- About 1.5 GB of free disk space for the Rust toolchain and the build, plus a
-  few minutes for the first compile.
+jayclip is a native GTK 3 desktop application. The source uses Unix-specific
+APIs, and there is no declared or tested support matrix for distributions or
+CPU architectures. Linux is the intended platform; the project has been tested
+on Linux Mint 22.3 with Cinnamon/X11, and its build was also verified in a stock
+Ubuntu 24.04 container.
 
-First, confirm you are on X11 (Wayland will not work):
+For the full automatic paste workflow, use an **X11** session and install
+`xdotool` and `xprop` (`x11-utils` on Debian/Ubuntu-based systems). GTK may run
+under Wayland, but automatic target-window detection and paste are X11-specific
+and are not supported in Wayland-only sessions.
+
+To build from source, you need Rust 1.85 or newer, a C compiler, `pkg-config`,
+and GTK 3 development libraries. SQLite is built from bundled sources. The
+Debian/Ubuntu package commands below are examples; use the equivalent packages
+for your distribution. Allow about 1.5 GB of free disk space for the Rust
+toolchain and build, plus a few minutes for the first compile.
+
+To check whether your current session is X11:
 
 ```sh
 echo $XDG_SESSION_TYPE   # must print: x11
@@ -44,8 +57,11 @@ echo $XDG_SESSION_TYPE   # must print: x11
 
 ## Install
 
-The install is a one-time, six-step setup. Steps 1–5 get it running; step 6 is
-only needed if you already use another clipboard manager.
+The steps below are a one-time setup example for Debian/Ubuntu-based systems
+using Cinnamon. Other distributions need their equivalent development packages,
+and other desktop environments can use their own autostart and global-shortcut
+settings. Steps 1–5 get it running; step 6 is only needed if you already use
+another clipboard manager.
 
 ### 1. Install the system packages
 
@@ -101,7 +117,7 @@ cat > ~/.config/autostart/jayclip.desktop <<EOF
 [Desktop Entry]
 Type=Application
 Name=jayclip
-Comment=Personal clipboard manager
+Comment=Clipboard manager
 Exec=$HOME/.cargo/bin/jayclip daemon
 Terminal=false
 X-GNOME-Autostart-enabled=true
@@ -274,7 +290,7 @@ It runs in WAL mode, so you will also see `-wal` and `-shm` files while the
 daemon is running. Because history can contain secrets, the directory is created
 with mode `0700` and the file with `0600`.
 
-To peek at what is stored (Python 3 ships with Linux Mint):
+To peek at what is stored (requires Python 3):
 
 ```sh
 python3 - <<'PY'
