@@ -41,11 +41,14 @@ fn entry_text(entry: &Entry) -> String {
 
 fn entry_markers(entry: &Entry) -> String {
     let mut markers = String::new();
-    if entry.pinned {
-        markers.push('📌');
-    }
     if entry.has_rich {
         markers.push('🤖');
+    }
+    if entry.has_rich && entry.pinned {
+        markers.push(' ');
+    }
+    if entry.pinned {
+        markers.push('📌');
     }
     markers
 }
