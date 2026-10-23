@@ -29,7 +29,7 @@ Once installed and running, you:
 | Marker      | Meaning                                                     |
 |-------------|-------------------------------------------------------------|
 | 📌          | Pinned — stays at the top, never auto-removed               |
-| 🤖          | Has rich formatting (HTML/RTF); pastes formatted by default |
+| 🖌️          | Has rich formatting (HTML/RTF); pastes formatted by default |
 | (thumbnail) | An image entry                                              |
 
 ## Requirements
@@ -223,7 +223,7 @@ previous window back to the front, and sends the paste keystroke for you:
 Ctrl+V normally, or Ctrl+Shift+V in terminals (gnome-terminal, kitty,
 alacritty, xterm, tilix, konsole, and similar).
 
-Rich-text entries (marked 🤖) paste **with their formatting** by default. Use
+Rich-text entries (marked 🖌️) paste **with their formatting** by default. Use
 Shift+Enter or Shift+click to paste the plain-text version instead. Note that
 Shift is ignored for the digit and keypad shortcuts — those always paste the
 default (formatted) version.
@@ -233,7 +233,7 @@ selection.
 
 ### Rich text and images
 
-- **Rich text** entries offer HTML or RTF and are marked 🤖. The menu shows a
+- **Rich text** entries offer HTML or RTF and are marked 🖌️. The menu shows a
   plain-text preview; pasting keeps the formatting. Supported formats are
   `text/html`, `text/rtf`, and `application/rtf` when the source provides them.
 - **Images** are stored as PNG. The menu row shows a thumbnail (scaled to fit
