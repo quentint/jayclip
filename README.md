@@ -1,34 +1,36 @@
 # jayclip
 
-A native GTK 3 clipboard manager for Unix-like desktop systems on X11, inspired by
-[Diodon](https://github.com/diodon-dev/diodon).
+Keep the things you copy close at hand. jayclip is a clipboard manager for Linux
+that lets you quickly find and reuse recent text, formatted snippets, and images.
 
-Everything you copy is saved to a private, on-disk history. Press a global
-shortcut and a menu pops up right where your mouse is; pick an entry and it is
-pasted straight into whatever window you were using.
+- 🔎 **Pick up where you left off:** open your history with a keyboard shortcut,
+  then paste an item into the window you were using.
+- 📌 **Keep useful items handy:** pin entries so they stay at the top of your
+  history; browse thumbnails for copied images.
+- 📝 **Preserve formatting:** HTML and RTF snippets keep their rich-text formatting,
+  with an option to paste plain text instead.
+- 🔒 **Keep history on your device:** entries are stored locally with restrictive
+  file permissions. Passwords are not skipped by default; an optional setting
+  can skip copies that carry a recognized password-manager hint.
 
-**What it handles:** plain text, rich text (HTML and RTF), and images (PNG).
-Passwords are not skipped by default. Rich-text entries paste with their formatting
-intact, but you can paste them as plain text when you want to.
-
-> jayclip is written in Rust with GTK 3. Its UI and clipboard integration may
-> work in other GTK desktop sessions, but automatic target-window detection and
-> paste use `xdotool` and `xprop` and therefore require X11. Wayland-only
-> sessions do not support that automatic paste workflow.
+jayclip is a native GTK 3 application. Its full automatic paste workflow uses
+X11 tools, so it is intended for Linux desktop sessions running X11. GTK UI and
+clipboard support may work in other GTK sessions, but Wayland-only sessions do
+not support automatic target-window detection and paste.
 
 ## At a glance
 
 Once installed and running, you:
 
-1. Copy things normally, all day.
+1. Copy things normally.
 2. Press your shortcut (for example `Super+V`) to open the history menu.
 3. Press `1`-`9`, click, or use the arrow keys to paste an entry.
 
-| Marker | Meaning |
-|---|---|
-| 📌 | Pinned — stays at the top, never auto-removed |
-| 🤖 | Has rich formatting (HTML/RTF); pastes formatted by default |
-| (thumbnail) | An image entry |
+| Marker      | Meaning                                                     |
+|-------------|-------------------------------------------------------------|
+| 📌          | Pinned — stays at the top, never auto-removed               |
+| 🤖          | Has rich formatting (HTML/RTF); pastes formatted by default |
+| (thumbnail) | An image entry                                              |
 
 ## Requirements
 
@@ -72,13 +74,13 @@ sudo apt install build-essential pkg-config libgtk-3-dev xdotool x11-utils curl 
 
 What each one is for:
 
-| Package | Why it is needed |
-|---|---|
+| Package                         | Why it is needed                                                                                                 |
+|---------------------------------|------------------------------------------------------------------------------------------------------------------|
 | `build-essential`, `pkg-config` | C compiler and library lookup. SQLite is compiled from bundled sources, so `libsqlite3-dev` is **not** required. |
-| `libgtk-3-dev` | GTK 3 headers for the build |
-| `xdotool` | Refocuses the target window and sends Ctrl+V |
-| `x11-utils` | Provides `xprop`, used to detect terminals so paste uses Ctrl+Shift+V there |
-| `curl`, `git` | Fetch rustup and this repository |
+| `libgtk-3-dev`                  | GTK 3 headers for the build                                                                                      |
+| `xdotool`                       | Refocuses the target window and sends Ctrl+V                                                                     |
+| `x11-utils`                     | Provides `xprop`, used to detect terminals so paste uses Ctrl+Shift+V there                                      |
+| `curl`, `git`                   | Fetch rustup and this repository                                                                                 |
 
 ### 2. Install the Rust toolchain
 
@@ -205,14 +207,14 @@ history menu opens at the mouse pointer.
 
 ### Keys in the menu
 
-| Key | Action |
-|---|---|
-| Up / Down, then Enter | Move to an entry and paste it |
-| `1`-`9` (top-row digits) | Paste the entry at that position. On an AZERTY keyboard use Shift (Shift+2 for entry 2) |
-| `1`-`9` (keypad, Num Lock on) | Paste the entry at that position |
-| `P` | Open the *Pin / unpin* submenu |
-| Escape | Close the menu without pasting |
-| Shift+Enter or Shift+click | Paste the **plain-text** version of an entry |
+| Key                           | Action                                                                                  |
+|-------------------------------|-----------------------------------------------------------------------------------------|
+| Up / Down, then Enter         | Move to an entry and paste it                                                           |
+| `1`-`9` (top-row digits)      | Paste the entry at that position. On an AZERTY keyboard use Shift (Shift+2 for entry 2) |
+| `1`-`9` (keypad, Num Lock on) | Paste the entry at that position                                                        |
+| `P`                           | Open the *Pin / unpin* submenu                                                          |
+| Escape                        | Close the menu without pasting                                                          |
+| Shift+Enter or Shift+click    | Paste the **plain-text** version of an entry                                            |
 
 ### How pasting works
 
