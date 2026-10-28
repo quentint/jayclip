@@ -21,7 +21,7 @@ pub fn label(content: &str) -> String {
     {
         out.push('…');
     }
-    out.replace('_', "__")
+    out
 }
 
 fn pixbuf_from_png(bytes: &[u8]) -> Option<gtk::gdk_pixbuf::Pixbuf> {
@@ -105,9 +105,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn flattens_and_escapes() {
+    fn flattens_text_and_preserves_underscores() {
         assert_eq!(label("  foo   bar\tbaz "), "foo bar baz");
-        assert_eq!(label("snake_case"), "snake__case");
+        assert_eq!(label("snake_case"), "snake_case");
     }
 
     #[test]
